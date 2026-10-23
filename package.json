@@ -11,7 +11,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "emulators": "firebase emulators:start --only auth,firestore",
-    "rules:test": "firebase emulators:exec --only firestore \"vitest run --root firebase\"",
+    "rules:test": "firebase emulators:exec --only firestore --project demo-tourbook \"vitest run --root firebase\"",
     "rules:deploy": "firebase deploy --only firestore:rules,firestore:indexes",
     "seed": "tsx scripts/seed.ts"
   },
@@ -20,8 +20,11 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^6.0.0",
+    "@tour/core": "workspace:*",
+    "firebase": "^13.1.0",
     "firebase-admin": "^14.5.0",
     "firebase-tools": "^15.34.1",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.5"
   }
 }
