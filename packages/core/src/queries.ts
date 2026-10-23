@@ -1,49 +1,185 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { DEFAULT_CHECKLIST } from './constants'
-import type {
-  Database,
-  EntityStatus,
-  Json,
-  ProducerCityRow,
-  ProducerVenueRow,
-  TourDateBandRow,
-  TourDateRow,
-  TourDateStatus,
-  TourRow,
-  VenueRow,
-} from './database.types'
+// Acesso a dados (Cloud Firestore). Todas as funções recebem `Client` e
+// devolvem tipos de domínio. Sem Cloud Functions no plano gratuito, então os
+// resumos (`dateCount`…) e o tourbook público são mantidos daqui mesmo.
 import {
-  rowToBand,
-  rowToCity,
-  rowToProducer,
-  rowToProfile,
-  rowToTour,
-  rowToTourDate,
-  rowToVenue,
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getCountFromServer,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+  type CollectionReference,
+  type DocumentReference,
+  type Firestore,
+} from 'firebase/firestore'
+import { DEFAULT_CHECKLIST } from './constants'
+import {
+  COLLECTIONS,
+  type BandDoc,
+  type CityDoc,
+  type Client,
+  type EntityStatus,
+  type ProducerDoc,
+  type ProfileDoc,
+  type PublicTourbookDoc,
+  type TourDateDoc,
+  type TourDateStatus,
+  type TourDoc,
+  type VenueDoc,
+} from './firestore'
+import {
+  docToBand,
+  docToCity,
+  docToProducer,
+  docToProfile,
+  docToTour,
+  docToTourDate,
+  docToTourSummary,
+  docToVenue,
+  nowIso,
   slugify,
+  type DocData,
 } from './mappers'
 import type { TourDateFormValues, TourFormValues, VenueSubmissionValues } from './schemas'
-import type { City, Profile, RegionData, Tour, TourDate, TourMember, TourWithDates, Venue } from './types'
+import type {
+  Band,
+  City,
+  Producer,
+  Profile,
+  RegionData,
+  Tour,
+  TourDate,
+  TourMember,
+  TourSummary,
+  TourWithDates,
+  Venue,
+} from './types'
 
-export type Client = SupabaseClient<Database>
+export type { Client } from './firestore'
 
-function fail(context: string, error: { message: string } | null): never {
-  throw new Error(`${context}: ${error?.message ?? 'erro desconhecido'}`)
+// ---------------------------------------------------------------------------
+// Infra
+// ---------------------------------------------------------------------------
+
+const MESSAGES: Record<string, string> = {
+  'permission-denied': 'Você não tem permissão para isso.',
+  unavailable: 'Sem conexão com o servidor. Tente de novo.',
+  'not-found': 'Registro não encontrado.',
+  unauthenticated: 'Faça login para continuar.',
+}
+
+/** Erro legível em pt-BR, mantendo o código do Firestore quando existe. */
+export class DataError extends Error {
+  readonly code: string | null
+  constructor(context: string, cause: unknown) {
+    const code = typeof cause === 'object' && cause !== null && 'code' in cause ? String((cause as { code: unknown }).code).replace(/^firestore\//, '') : null
+    const detail = (code && MESSAGES[code]) ?? (cause instanceof Error ? cause.message : 'erro desconhecido')
+    super(`${context}: ${detail}`)
+    this.name = 'DataError'
+    this.code = code
+  }
+}
+
+async function run<T>(context: string, op: () => Promise<T>): Promise<T> {
+  try {
+    return await op()
+  } catch (e) {
+    if (e instanceof DataError) throw e
+    throw new DataError(context, e)
+  }
+}
+
+function col(db: Firestore, name: string): CollectionReference<DocData> {
+  return collection(db, name) as CollectionReference<DocData>
+}
+
+function datesCol(db: Firestore, tourId: string): CollectionReference<DocData> {
+  return collection(db, COLLECTIONS.tours, tourId, COLLECTIONS.dates) as CollectionReference<DocData>
+}
+
+function ref(db: Firestore, name: string, id: string): DocumentReference<DocData> {
+  return doc(db, name, id) as DocumentReference<DocData>
+}
+
+function currentUid(client: Client): string {
+  const uid = client.auth.currentUser?.uid
+  if (!uid) throw new DataError('Sessão', { code: 'unauthenticated' })
+  return uid
+}
+
+function byName<T extends { name: string }>(a: T, b: T): number {
+  return a.name.localeCompare(b.name, 'pt-BR')
+}
+
+/** Divide `items` em lotes (o Firestore aceita até 500 operações por batch). */
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+/** Remove chaves `undefined` (o Firestore rejeita `undefined`). */
+function clean<T extends Record<string, unknown>>(obj: T): T {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v
+  return out as T
 }
 
 // ---------------------------------------------------------------------------
 // Perfil
 // ---------------------------------------------------------------------------
 
-export async function fetchMyProfile(sb: Client, userId: string): Promise<Profile | null> {
-  const { data, error } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle()
-  if (error) fail('Erro ao carregar perfil', error)
-  return data ? rowToProfile(data) : null
+export async function fetchMyProfile(client: Client, userId: string): Promise<Profile | null> {
+  return run('Erro ao carregar perfil', async () => {
+    const snap = await getDoc(ref(client.db, COLLECTIONS.profiles, userId))
+    return snap.exists() ? docToProfile(snap.id, snap.data()) : null
+  })
 }
 
-export async function updateMyProfile(sb: Client, userId: string, input: { displayName: string }): Promise<void> {
-  const { error } = await sb.from('profiles').update({ display_name: input.displayName }).eq('id', userId)
-  if (error) fail('Erro ao salvar perfil', error)
+export type AuthUserInfo = { uid: string; displayName: string | null; photoURL: string | null }
+
+/**
+ * Garante que `profiles/{uid}` exista após o login (não há trigger no Auth sem
+ * Cloud Functions). Não mexe em `role` nem sobrescreve um nome já editado.
+ */
+export async function ensureProfile(client: Client, user: AuthUserInfo): Promise<Profile> {
+  return run('Erro ao preparar perfil', async () => {
+    const r = ref(client.db, COLLECTIONS.profiles, user.uid)
+    const snap = await getDoc(r)
+    const now = nowIso()
+    if (!snap.exists()) {
+      const data: ProfileDoc = {
+        displayName: user.displayName,
+        avatarUrl: user.photoURL,
+        role: 'user',
+        createdAt: now,
+        updatedAt: now,
+      }
+      await setDoc(r, data)
+      return docToProfile(user.uid, data)
+    }
+    const current = docToProfile(snap.id, snap.data())
+    const patch: Partial<ProfileDoc> = {}
+    if (!current.displayName && user.displayName) patch.displayName = user.displayName
+    if (current.avatarUrl !== user.photoURL && user.photoURL) patch.avatarUrl = user.photoURL
+    if (Object.keys(patch).length > 0) {
+      await updateDoc(r, { ...patch, updatedAt: now })
+      return { ...current, ...patch }
+    }
+    return current
+  })
+}
+
+export async function updateMyProfile(client: Client, userId: string, input: { displayName: string }): Promise<void> {
+  return run('Erro ao salvar perfil', () =>
+    updateDoc(ref(client.db, COLLECTIONS.profiles, userId), { displayName: input.displayName, updatedAt: nowIso() }),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -51,178 +187,150 @@ export async function updateMyProfile(sb: Client, userId: string, input: { displ
 // então carregamos tudo de uma vez e filtramos no cliente.
 // ---------------------------------------------------------------------------
 
-export async function fetchCities(sb: Client): Promise<City[]> {
-  const { data, error } = await sb.from('cities').select('*').order('name')
-  if (error) fail('Erro ao carregar cidades', error)
-  return (data ?? []).map(rowToCity)
+export async function fetchCities(client: Client): Promise<City[]> {
+  return run('Erro ao carregar cidades', async () => {
+    const snap = await getDocs(col(client.db, COLLECTIONS.cities))
+    return snap.docs.map((d) => docToCity(d.id, d.data())).sort(byName)
+  })
 }
 
-export async function searchCities(sb: Client, term: string, limit = 8): Promise<City[]> {
-  const q = term.trim()
+function normalize(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+/** Busca por prefixo (sem acentos). Filtra no cliente: são poucas cidades. */
+export async function searchCities(client: Client, term: string, limit = 8): Promise<City[]> {
+  const q = normalize(term)
   if (!q) return []
-  const { data, error } = await sb.from('cities').select('*').ilike('name', `${q}%`).order('name').limit(limit)
-  if (error) fail('Erro ao buscar cidades', error)
-  return (data ?? []).map(rowToCity)
+  const cities = await fetchCities(client)
+  return cities.filter((c) => normalize(c.name).startsWith(q)).slice(0, limit)
 }
 
-export async function fetchRegionData(sb: Client): Promise<RegionData> {
-  const [cities, venues, producers, producerCities, producerVenues, bands] = await Promise.all([
-    sb.from('cities').select('*').order('name'),
-    sb.from('venues').select('*').eq('status', 'verified').order('name'),
-    sb.from('producers').select('*').eq('status', 'verified').order('name'),
-    sb.from('producer_cities').select('*'),
-    sb.from('producer_venues').select('*'),
-    sb.from('bands').select('*').eq('status', 'verified').order('name'),
+async function fetchVerified<T>(client: Client, name: string, map: (id: string, d: DocData) => T, context: string): Promise<T[]> {
+  return run(context, async () => {
+    const snap = await getDocs(query(col(client.db, name), where('status', '==', 'verified')))
+    return snap.docs.map((d) => map(d.id, d.data()))
+  })
+}
+
+export async function fetchRegionData(client: Client): Promise<RegionData> {
+  const [cities, venues, producers, bands] = await Promise.all([
+    fetchCities(client),
+    fetchVerified(client, COLLECTIONS.venues, docToVenue, 'Erro ao carregar casas'),
+    fetchVerified(client, COLLECTIONS.producers, docToProducer, 'Erro ao carregar produtoras'),
+    fetchVerified(client, COLLECTIONS.bands, docToBand, 'Erro ao carregar bandas'),
   ])
-  if (cities.error) fail('Erro ao carregar cidades', cities.error)
-  if (venues.error) fail('Erro ao carregar casas', venues.error)
-  if (producers.error) fail('Erro ao carregar produtoras', producers.error)
-  if (producerCities.error) fail('Erro ao carregar produtoras', producerCities.error)
-  if (producerVenues.error) fail('Erro ao carregar produtoras', producerVenues.error)
-  if (bands.error) fail('Erro ao carregar bandas', bands.error)
-
-  const pc = groupBy(producerCities.data ?? [], (r: ProducerCityRow) => r.producer_id)
-  const pv = groupBy(producerVenues.data ?? [], (r: ProducerVenueRow) => r.producer_id)
-
   return {
-    cities: (cities.data ?? []).map(rowToCity),
-    venues: (venues.data ?? []).map(rowToVenue),
-    producers: (producers.data ?? []).map((row) =>
-      rowToProducer(
-        row,
-        (pc.get(row.id) ?? []).map((r) => r.city_id),
-        (pv.get(row.id) ?? []).map((r) => r.venue_id),
-      ),
-    ),
-    bands: (bands.data ?? []).map(rowToBand),
+    cities,
+    venues: venues.sort(byName),
+    producers: producers.sort(byName),
+    bands: bands.sort(byName),
   }
-}
-
-function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
-  const map = new Map<string, T[]>()
-  for (const row of rows) {
-    const k = key(row)
-    const list = map.get(k)
-    if (list) list.push(row)
-    else map.set(k, [row])
-  }
-  return map
 }
 
 // ---------------------------------------------------------------------------
 // Casas: sugestão (usuário) e moderação (admin)
 // ---------------------------------------------------------------------------
 
-export async function submitVenue(sb: Client, userId: string, input: VenueSubmissionValues): Promise<Venue> {
-  const slug = `${slugify(input.name)}-${Math.random().toString(36).slice(2, 8)}`
-  const { data, error } = await sb
-    .from('venues')
-    .insert({
-      city_id: input.cityId,
+export async function submitVenue(client: Client, userId: string, input: VenueSubmissionValues): Promise<Venue> {
+  return run('Erro ao enviar casa', async () => {
+    const now = nowIso()
+    const data: VenueDoc = {
+      cityId: input.cityId,
       name: input.name,
-      slug,
+      slug: `${slugify(input.name)}-${Math.random().toString(36).slice(2, 8)}`,
       address: input.address,
       lat: input.lat,
       lng: input.lng,
       capacity: input.capacity,
       genres: input.genres,
-      show_days: input.showDays,
-      deal_types: input.dealTypes as VenueRow['deal_types'],
-      has_pa: input.hasPa,
-      has_backline: input.hasBackline,
-      accepts_touring_bands: input.acceptsTouringBands,
-      contact_name: input.contactName,
-      contact_phone: input.contactPhone,
-      contact_email: input.contactEmail,
+      showDays: input.showDays,
+      dealTypes: input.dealTypes as VenueDoc['dealTypes'],
+      hasPa: input.hasPa,
+      hasBackline: input.hasBackline,
+      acceptsTouringBands: input.acceptsTouringBands,
+      contactName: input.contactName,
+      contactPhone: input.contactPhone,
+      contactEmail: input.contactEmail,
       instagram: input.instagram,
       website: input.website,
       notes: input.notes,
       status: 'pending',
-      submitted_by: userId,
-    })
-    .select('*')
-    .single()
-  if (error) fail('Erro ao enviar casa', error)
-  return rowToVenue(data)
+      submittedBy: userId,
+      createdAt: now,
+      updatedAt: now,
+    }
+    const created = await addDoc(col(client.db, COLLECTIONS.venues), data)
+    return docToVenue(created.id, data)
+  })
 }
 
-export async function fetchMySubmissions(sb: Client, userId: string): Promise<Venue[]> {
-  const { data, error } = await sb
-    .from('venues')
-    .select('*')
-    .eq('submitted_by', userId)
-    .order('created_at', { ascending: false })
-  if (error) fail('Erro ao carregar suas sugestões', error)
-  return (data ?? []).map(rowToVenue)
+export async function fetchMySubmissions(client: Client, userId: string): Promise<Venue[]> {
+  return run('Erro ao carregar suas sugestões', async () => {
+    const snap = await getDocs(query(col(client.db, COLLECTIONS.venues), where('submittedBy', '==', userId)))
+    return snap.docs.map((d) => docToVenue(d.id, d.data())).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  })
 }
 
-export async function fetchPendingVenues(sb: Client): Promise<Venue[]> {
-  const { data, error } = await sb.from('venues').select('*').eq('status', 'pending').order('created_at')
-  if (error) fail('Erro ao carregar pendências', error)
-  return (data ?? []).map(rowToVenue)
+export async function fetchPendingVenues(client: Client): Promise<Venue[]> {
+  return run('Erro ao carregar pendências', async () => {
+    const snap = await getDocs(query(col(client.db, COLLECTIONS.venues), where('status', '==', 'pending')))
+    return snap.docs.map((d) => docToVenue(d.id, d.data())).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  })
 }
 
-export async function moderateVenue(sb: Client, venueId: string, status: Exclude<EntityStatus, 'pending'>): Promise<void> {
-  const { error } = await sb.from('venues').update({ status }).eq('id', venueId)
-  if (error) fail('Erro ao moderar casa', error)
+export async function moderateVenue(client: Client, venueId: string, status: Exclude<EntityStatus, 'pending'>): Promise<void> {
+  return run('Erro ao moderar casa', () => updateDoc(ref(client.db, COLLECTIONS.venues, venueId), { status, updatedAt: nowIso() }))
 }
 
 // ---------------------------------------------------------------------------
 // Turnês
 // ---------------------------------------------------------------------------
 
-export async function fetchMyTours(sb: Client): Promise<Array<Tour & { dateCount: number; firstDate: string | null; lastDate: string | null }>> {
-  const { data, error } = await sb
-    .from('tours')
-    .select('*, tour_dates(date)')
-    .order('updated_at', { ascending: false })
-  if (error) fail('Erro ao carregar turnês', error)
-  return (data ?? []).map((row) => {
-    const { tour_dates, ...tour } = row as TourRow & { tour_dates: Array<{ date: string }> }
-    const dates = (tour_dates ?? []).map((d) => d.date).sort()
-    return {
-      ...rowToTour(tour),
-      dateCount: dates.length,
-      firstDate: dates[0] ?? null,
-      lastDate: dates.at(-1) ?? null,
-    }
+export async function fetchMyTours(client: Client): Promise<TourSummary[]> {
+  const uid = currentUid(client)
+  return run('Erro ao carregar turnês', async () => {
+    const snap = await getDocs(query(col(client.db, COLLECTIONS.tours), where('memberIds', 'array-contains', uid)))
+    return snap.docs.map((d) => docToTourSummary(d.id, d.data())).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   })
 }
 
-export async function fetchTour(sb: Client, tourId: string): Promise<TourWithDates | null> {
-  const [tour, dates, members] = await Promise.all([
-    sb.from('tours').select('*').eq('id', tourId).maybeSingle(),
-    sb.from('tour_dates').select('*').eq('tour_id', tourId).order('date').order('created_at'),
-    sb.from('tour_members').select('*, profiles(*)').eq('tour_id', tourId),
-  ])
-  if (tour.error) fail('Erro ao carregar turnê', tour.error)
-  if (!tour.data) return null
-  if (dates.error) fail('Erro ao carregar datas', dates.error)
-  if (members.error) fail('Erro ao carregar membros', members.error)
+async function fetchTourDates(db: Firestore, tourId: string): Promise<TourDate[]> {
+  const snap = await getDocs(datesCol(db, tourId))
+  return snap.docs
+    .map((d) => docToTourDate(tourId, d.id, d.data()))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt))
+}
 
-  const dateIds = (dates.data ?? []).map((d) => d.id)
-  let dateBands: TourDateBandRow[] = []
-  if (dateIds.length > 0) {
-    const { data, error } = await sb.from('tour_date_bands').select('*').in('tour_date_id', dateIds)
-    if (error) fail('Erro ao carregar bandas das datas', error)
-    dateBands = data ?? []
-  }
-
-  const memberList: TourMember[] = (members.data ?? []).map((m) => {
-    const row = m as unknown as { tour_id: string; profile_id: string; role: TourMember['role']; profiles: Parameters<typeof rowToProfile>[0] | null }
-    return {
-      tourId: row.tour_id,
-      profileId: row.profile_id,
-      role: row.role,
-      profile: row.profiles ? rowToProfile(row.profiles) : undefined,
-    }
+export async function fetchTour(client: Client, tourId: string): Promise<TourWithDates | null> {
+  return run('Erro ao carregar turnê', async () => {
+    const tourSnap = await getDoc(ref(client.db, COLLECTIONS.tours, tourId))
+    if (!tourSnap.exists()) return null
+    const tour = docToTour(tourSnap.id, tourSnap.data())
+    const [dates, profiles] = await Promise.all([
+      fetchTourDates(client.db, tourId),
+      Promise.all(
+        tour.memberIds.map(async (uid) => {
+          try {
+            return await fetchMyProfile(client, uid)
+          } catch {
+            return null
+          }
+        }),
+      ),
+    ])
+    const members: TourMember[] = tour.memberIds.map((uid, i) => ({
+      tourId,
+      profileId: uid,
+      role: uid === tour.ownerId ? 'editor' : (tour.memberRoles[uid] ?? 'viewer'),
+      profile: profiles[i] ?? undefined,
+    }))
+    return { ...tour, dates, members }
   })
-
-  return {
-    ...rowToTour(tour.data),
-    dates: (dates.data ?? []).map((d) => rowToTourDate(d, dateBands)),
-    members: memberList,
-  }
 }
 
 export type CreateTourInput = {
@@ -238,137 +346,159 @@ export type CreateTourInput = {
   }>
 }
 
-export async function createTour(sb: Client, ownerId: string, input: CreateTourInput): Promise<Tour> {
-  const t = input.tour
-  const { data, error } = await sb
-    .from('tours')
-    .insert({
-      owner_id: ownerId,
-      band_id: t.bandId,
-      band_name: t.bandName,
+function defaultChecklist(): TourDateDoc['checklist'] {
+  return DEFAULT_CHECKLIST.map((label) => ({ label, done: false }))
+}
+
+function summaryOf(dates: Array<{ date: string }>): Pick<TourDoc, 'dateCount' | 'firstDate' | 'lastDate'> {
+  const sorted = dates.map((d) => d.date).sort()
+  return { dateCount: sorted.length, firstDate: sorted[0] ?? null, lastDate: sorted.at(-1) ?? null }
+}
+
+export async function createTour(client: Client, ownerId: string, input: CreateTourInput): Promise<Tour> {
+  return run('Erro ao criar turnê', async () => {
+    const t = input.tour
+    const now = nowIso()
+    const tourRef = doc(col(client.db, COLLECTIONS.tours))
+    const data: TourDoc = {
+      ownerId,
+      bandId: t.bandId,
+      bandName: t.bandName,
       name: t.name,
-      start_city_id: t.startCityId,
-      end_city_id: t.endCityId,
-      max_km_per_day: t.maxKmPerDay,
-      allow_off_days: t.allowOffDays,
+      startCityId: t.startCityId,
+      endCityId: t.endCityId,
+      maxKmPerDay: t.maxKmPerDay,
+      allowOffDays: t.allowOffDays,
       genres: t.genres,
-      capacity_min: t.capacityMin,
-      capacity_max: t.capacityMax,
+      capacityMin: t.capacityMin,
+      capacityMax: t.capacityMax,
       notes: t.notes,
-    })
-    .select('*')
-    .single()
-  if (error) fail('Erro ao criar turnê', error)
-  const tour = rowToTour(data)
-
-  if (input.dates.length > 0) {
-    const checklist = DEFAULT_CHECKLIST.map((label) => ({ label, done: false })) as unknown as Json
-    const { data: inserted, error: dErr } = await sb
-      .from('tour_dates')
-      .insert(
-        input.dates.map((d) => ({
-          tour_id: tour.id,
-          date: d.date,
-          city_id: d.cityId,
-          venue_id: d.venueId,
-          producer_id: d.producerId,
-          is_fixed: d.isFixed,
-          status: d.status ?? 'ideia',
-          checklist,
-        })),
-      )
-      .select('id, date')
-    if (dErr) fail('Erro ao salvar datas', dErr)
-
-    const bandRows: Array<{ tour_date_id: string; band_id: string }> = []
+      shareToken: null,
+      memberIds: [ownerId],
+      memberRoles: { [ownerId]: 'editor' },
+      ...summaryOf(input.dates),
+      createdAt: now,
+      updatedAt: now,
+    }
+    const batch = writeBatch(client.db)
+    batch.set(tourRef, data)
     for (const d of input.dates) {
-      if (!d.bandIds?.length) continue
-      const match = (inserted ?? []).find((r) => r.date === d.date)
-      if (!match) continue
-      for (const bandId of d.bandIds) bandRows.push({ tour_date_id: match.id, band_id: bandId })
+      const dateDoc: TourDateDoc = {
+        date: d.date,
+        cityId: d.cityId,
+        venueId: d.venueId,
+        producerId: d.producerId,
+        status: d.status ?? 'ideia',
+        isFixed: d.isFixed,
+        loadInTime: null,
+        soundcheckTime: null,
+        doorsTime: null,
+        setTime: null,
+        dealType: null,
+        feeCents: null,
+        costCents: null,
+        lodging: null,
+        checklist: defaultChecklist(),
+        notes: null,
+        bands: (d.bandIds ?? []).map((bandId) => ({ bandId, role: 'convidada' })),
+        createdAt: now,
+        updatedAt: now,
+      }
+      batch.set(doc(datesCol(client.db, tourRef.id)), dateDoc)
     }
-    if (bandRows.length > 0) {
-      const { error: bErr } = await sb.from('tour_date_bands').insert(bandRows)
-      if (bErr) fail('Erro ao salvar bandas das datas', bErr)
+    await batch.commit()
+    return docToTour(tourRef.id, data)
+  })
+}
+
+export async function updateTour(client: Client, tourId: string, patch: Partial<TourFormValues>): Promise<void> {
+  await run('Erro ao salvar turnê', () =>
+    updateDoc(ref(client.db, COLLECTIONS.tours, tourId), clean({ ...patch, updatedAt: nowIso() })),
+  )
+  await syncPublicTourbook(client, tourId)
+}
+
+/** Apaga a turnê, suas datas e o tourbook público (o Firestore não faz cascata). */
+export async function deleteTour(client: Client, tourId: string): Promise<void> {
+  return run('Erro ao excluir turnê', async () => {
+    const tourRef = ref(client.db, COLLECTIONS.tours, tourId)
+    const tourSnap = await getDoc(tourRef)
+    if (!tourSnap.exists()) return
+    const tour = docToTour(tourSnap.id, tourSnap.data())
+    if (tour.shareToken) await deleteDoc(ref(client.db, COLLECTIONS.publicTourbooks, tour.shareToken))
+    const dates = await getDocs(datesCol(client.db, tourId))
+    for (const part of chunk(dates.docs, 400)) {
+      const batch = writeBatch(client.db)
+      for (const d of part) batch.delete(d.ref)
+      await batch.commit()
     }
-  }
-  return tour
+    await deleteDoc(tourRef)
+  })
 }
 
-export async function updateTour(sb: Client, tourId: string, patch: Partial<TourFormValues>): Promise<void> {
-  const update: Database['public']['Tables']['tours']['Update'] = {}
-  if (patch.name !== undefined) update.name = patch.name
-  if (patch.bandName !== undefined) update.band_name = patch.bandName
-  if (patch.bandId !== undefined) update.band_id = patch.bandId
-  if (patch.genres !== undefined) update.genres = patch.genres
-  if (patch.startCityId !== undefined) update.start_city_id = patch.startCityId
-  if (patch.endCityId !== undefined) update.end_city_id = patch.endCityId
-  if (patch.maxKmPerDay !== undefined) update.max_km_per_day = patch.maxKmPerDay
-  if (patch.allowOffDays !== undefined) update.allow_off_days = patch.allowOffDays
-  if (patch.capacityMin !== undefined) update.capacity_min = patch.capacityMin
-  if (patch.capacityMax !== undefined) update.capacity_max = patch.capacityMax
-  if (patch.notes !== undefined) update.notes = patch.notes
-  const { error } = await sb.from('tours').update(update).eq('id', tourId)
-  if (error) fail('Erro ao salvar turnê', error)
+export type TourDatePatch = Partial<TourDateFormValues> & {
+  checklist?: Array<{ label: string; done: boolean }>
+  bands?: Array<{ bandId: string; role: string }>
 }
 
-export async function deleteTour(sb: Client, tourId: string): Promise<void> {
-  const { error } = await sb.from('tours').delete().eq('id', tourId)
-  if (error) fail('Erro ao excluir turnê', error)
+export async function addTourDate(client: Client, tourId: string, input: TourDatePatch & { date: string }): Promise<TourDate> {
+  const created = await run('Erro ao adicionar data', async () => {
+    const now = nowIso()
+    const data: TourDateDoc = {
+      date: input.date,
+      cityId: input.cityId ?? null,
+      venueId: input.venueId ?? null,
+      producerId: input.producerId ?? null,
+      status: (input.status as TourDateStatus | undefined) ?? 'ideia',
+      isFixed: input.isFixed ?? false,
+      loadInTime: input.loadInTime ?? null,
+      soundcheckTime: input.soundcheckTime ?? null,
+      doorsTime: input.doorsTime ?? null,
+      setTime: input.setTime ?? null,
+      dealType: (input.dealType as TourDateDoc['dealType'] | undefined) ?? null,
+      feeCents: input.feeCents ?? null,
+      costCents: input.costCents ?? null,
+      lodging: input.lodging ?? null,
+      checklist: input.checklist ?? defaultChecklist(),
+      notes: input.notes ?? null,
+      bands: input.bands ?? [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    const r = await addDoc(datesCol(client.db, tourId), data)
+    return docToTourDate(tourId, r.id, data)
+  })
+  await afterDatesChanged(client, tourId)
+  return created
 }
 
-export type TourDatePatch = Partial<TourDateFormValues> & { checklist?: Array<{ label: string; done: boolean }> }
-
-function toTourDateUpdate(patch: TourDatePatch): Database['public']['Tables']['tour_dates']['Update'] {
-  const u: Database['public']['Tables']['tour_dates']['Update'] = {}
-  if (patch.date !== undefined) u.date = patch.date
-  if (patch.cityId !== undefined) u.city_id = patch.cityId
-  if (patch.venueId !== undefined) u.venue_id = patch.venueId
-  if (patch.producerId !== undefined) u.producer_id = patch.producerId
-  if (patch.status !== undefined) u.status = patch.status as TourDateStatus
-  if (patch.isFixed !== undefined) u.is_fixed = patch.isFixed
-  if (patch.loadInTime !== undefined) u.load_in_time = patch.loadInTime
-  if (patch.soundcheckTime !== undefined) u.soundcheck_time = patch.soundcheckTime
-  if (patch.doorsTime !== undefined) u.doors_time = patch.doorsTime
-  if (patch.setTime !== undefined) u.set_time = patch.setTime
-  if (patch.dealType !== undefined) u.deal_type = patch.dealType as TourDateRow['deal_type']
-  if (patch.feeCents !== undefined) u.fee_cents = patch.feeCents
-  if (patch.costCents !== undefined) u.cost_cents = patch.costCents
-  if (patch.lodging !== undefined) u.lodging = patch.lodging
-  if (patch.notes !== undefined) u.notes = patch.notes
-  if (patch.checklist !== undefined) u.checklist = patch.checklist as unknown as Json
-  return u
+export async function updateTourDate(client: Client, tourId: string, dateId: string, patch: TourDatePatch): Promise<void> {
+  await run('Erro ao salvar data', () =>
+    updateDoc(doc(datesCol(client.db, tourId), dateId), clean({ ...patch, updatedAt: nowIso() })),
+  )
+  await afterDatesChanged(client, tourId)
 }
 
-export async function addTourDate(sb: Client, tourId: string, input: TourDatePatch & { date: string }): Promise<TourDate> {
-  const checklist = DEFAULT_CHECKLIST.map((label) => ({ label, done: false })) as unknown as Json
-  const { data, error } = await sb
-    .from('tour_dates')
-    .insert({ tour_id: tourId, checklist, ...toTourDateUpdate(input), date: input.date })
-    .select('*')
-    .single()
-  if (error) fail('Erro ao adicionar data', error)
-  return rowToTourDate(data)
+export async function deleteTourDate(client: Client, tourId: string, dateId: string): Promise<void> {
+  await run('Erro ao remover data', () => deleteDoc(doc(datesCol(client.db, tourId), dateId)))
+  await afterDatesChanged(client, tourId)
 }
 
-export async function updateTourDate(sb: Client, tourDateId: string, patch: TourDatePatch): Promise<void> {
-  const { error } = await sb.from('tour_dates').update(toTourDateUpdate(patch)).eq('id', tourDateId)
-  if (error) fail('Erro ao salvar data', error)
+export async function setTourDateBands(client: Client, tourId: string, dateId: string, bandIds: string[]): Promise<void> {
+  await updateTourDate(client, tourId, dateId, { bands: bandIds.map((bandId) => ({ bandId, role: 'convidada' })) })
 }
 
-export async function deleteTourDate(sb: Client, tourDateId: string): Promise<void> {
-  const { error } = await sb.from('tour_dates').delete().eq('id', tourDateId)
-  if (error) fail('Erro ao remover data', error)
+/** Recalcula `dateCount/firstDate/lastDate` e atualiza o tourbook público, se houver. */
+async function afterDatesChanged(client: Client, tourId: string): Promise<void> {
+  await recomputeTourSummary(client, tourId)
+  await syncPublicTourbook(client, tourId)
 }
 
-export async function setTourDateBands(sb: Client, tourDateId: string, bandIds: string[]): Promise<void> {
-  const del = await sb.from('tour_date_bands').delete().eq('tour_date_id', tourDateId)
-  if (del.error) fail('Erro ao salvar bandas da noite', del.error)
-  if (bandIds.length === 0) return
-  const { error } = await sb
-    .from('tour_date_bands')
-    .insert(bandIds.map((band_id) => ({ tour_date_id: tourDateId, band_id })))
-  if (error) fail('Erro ao salvar bandas da noite', error)
+export async function recomputeTourSummary(client: Client, tourId: string): Promise<void> {
+  return run('Erro ao atualizar resumo da turnê', async () => {
+    const dates = await fetchTourDates(client.db, tourId)
+    await updateDoc(ref(client.db, COLLECTIONS.tours, tourId), { ...summaryOf(dates), updatedAt: nowIso() })
+  })
 }
 
 /** UUID v4 via Web Crypto (existe no navegador, no Node ≥ 19 e no React Native com polyfill). */
@@ -384,35 +514,164 @@ export function randomUuid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-export async function enableShareLink(sb: Client, tourId: string): Promise<string> {
-  const token = randomUuid()
-  const { error } = await sb.from('tours').update({ share_token: token }).eq('id', tourId)
-  if (error) fail('Erro ao gerar link', error)
+// ---------------------------------------------------------------------------
+// Tourbook público (link /t/:token)
+// ---------------------------------------------------------------------------
+
+/** Tudo que a página pública e o PDF precisam, já sem dono, dinheiro e quem cadastrou. */
+export type PublicTourbookPayload = {
+  tour: Tour
+  dates: TourDate[]
+  lookups: { cities: City[]; venues: Venue[]; bands: Band[]; producers: Producer[] }
+  generatedAt: string
+}
+
+export async function enableShareLink(client: Client, tourId: string): Promise<string> {
+  const tourRef = ref(client.db, COLLECTIONS.tours, tourId)
+  const existing = await run('Erro ao gerar link', async () => {
+    const snap = await getDoc(tourRef)
+    return snap.exists() ? docToTour(snap.id, snap.data()).shareToken : null
+  })
+  const token = existing ?? randomUuid()
+  if (!existing) await run('Erro ao gerar link', () => updateDoc(tourRef, { shareToken: token, updatedAt: nowIso() }))
+  await syncPublicTourbook(client, tourId)
   return token
 }
 
-export async function disableShareLink(sb: Client, tourId: string): Promise<void> {
-  const { error } = await sb.from('tours').update({ share_token: null }).eq('id', tourId)
-  if (error) fail('Erro ao desativar link', error)
+export async function disableShareLink(client: Client, tourId: string): Promise<void> {
+  return run('Erro ao desativar link', async () => {
+    const tourRef = ref(client.db, COLLECTIONS.tours, tourId)
+    const snap = await getDoc(tourRef)
+    if (!snap.exists()) return
+    const token = docToTour(snap.id, snap.data()).shareToken
+    // Primeiro o documento público (a regra exige que o token ainda bata com a turnê).
+    if (token) await deleteDoc(ref(client.db, COLLECTIONS.publicTourbooks, token))
+    await updateDoc(tourRef, { shareToken: null, updatedAt: nowIso() })
+  })
 }
 
-/** Tourbook público: retorna o JSON montado pela função `get_public_tourbook`, ou null se o link não existe. */
-export async function fetchPublicTourbook(sb: Client, token: string): Promise<PublicTourbookPayload | null> {
-  const { data, error } = await sb.rpc('get_public_tourbook', { p_token: token })
-  if (error) fail('Erro ao carregar tourbook', error)
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
-  return data as unknown as PublicTourbookPayload
+async function fetchMany<T>(client: Client, name: string, ids: Iterable<string | null>, map: (id: string, d: DocData) => T): Promise<T[]> {
+  const unique = [...new Set([...ids].filter((id): id is string => !!id))]
+  const results: Array<T | null> = await Promise.all(
+    unique.map(async (id): Promise<T | null> => {
+      try {
+        const snap = await getDoc(ref(client.db, name, id))
+        return snap.exists() ? map(snap.id, snap.data()) : null
+      } catch {
+        // Ex.: casa pendente de outro usuário — sem permissão de leitura; segue sem ela.
+        return null
+      }
+    }),
+  )
+  return results.filter((x): x is T => x !== null)
 }
 
-export type PublicTourbookPayload = {
-  tour: Omit<TourRow, 'owner_id' | 'share_token'>
-  dates: Array<
-    Omit<TourDateRow, 'fee_cents' | 'cost_cents'> & {
-      city: Database['public']['Tables']['cities']['Row'] | null
-      venue: Omit<VenueRow, 'submitted_by'> | null
-      bands: Array<{ id: string; name: string; role: string; links: Json }>
+/** Monta o payload público a partir da turnê e das entidades referenciadas. */
+export async function buildPublicTourbookPayload(client: Client, tour: TourWithDates): Promise<PublicTourbookPayload> {
+  const [cities, venues, bands, producers] = await Promise.all([
+    fetchMany(client, COLLECTIONS.cities, [tour.startCityId, tour.endCityId, ...tour.dates.map((d) => d.cityId)], docToCity),
+    fetchMany(client, COLLECTIONS.venues, tour.dates.map((d) => d.venueId), docToVenue),
+    fetchMany(client, COLLECTIONS.bands, [tour.bandId, ...tour.dates.flatMap((d) => d.bands.map((b) => b.bandId))], docToBand),
+    fetchMany(client, COLLECTIONS.producers, tour.dates.map((d) => d.producerId), docToProducer),
+  ])
+  const publicTour: Tour = { ...tour, ownerId: '', shareToken: null, memberIds: [], memberRoles: {} }
+  const { dates: _dates, members: _members, ...tourFields } = publicTour as TourWithDates
+  return {
+    tour: tourFields,
+    dates: tour.dates.map((d) => ({ ...d, feeCents: null, costCents: null })),
+    lookups: {
+      cities,
+      venues: venues.map((v) => ({ ...v, submittedBy: null })),
+      bands: bands.map((b) => ({ ...b, submittedBy: null, ownerId: null })),
+      producers: producers.map((p) => ({ ...p, submittedBy: null })),
+    },
+    generatedAt: nowIso(),
+  }
+}
+
+/** Regrava `publicTourbooks/{token}` se a turnê tiver link ativo. Silencioso quando não tem. */
+export async function syncPublicTourbook(client: Client, tourId: string): Promise<void> {
+  const tour = await fetchTour(client, tourId)
+  if (!tour?.shareToken) return
+  await run('Erro ao atualizar tourbook público', async () => {
+    const payload = await buildPublicTourbookPayload(client, tour)
+    const data: PublicTourbookDoc<PublicTourbookPayload> = { tourId, payload, updatedAt: nowIso() }
+    await setDoc(ref(client.db, COLLECTIONS.publicTourbooks, tour.shareToken!), data)
+  })
+}
+
+/** Tourbook público: null se o link não existe ou foi desativado. */
+export async function fetchPublicTourbook(client: Client, token: string): Promise<PublicTourbookPayload | null> {
+  return run('Erro ao carregar tourbook', async () => {
+    const snap = await getDoc(ref(client.db, COLLECTIONS.publicTourbooks, token))
+    if (!snap.exists()) return null
+    const payload = (snap.data() as Partial<PublicTourbookDoc<PublicTourbookPayload>>).payload
+    return payload && typeof payload === 'object' && 'tour' in payload ? payload : null
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Dados de exemplo (admin): importa cidades/casas/produtoras/bandas em lote.
+// ---------------------------------------------------------------------------
+
+type Stamps = 'createdAt' | 'updatedAt'
+export type SeedCity = CityDoc & { id: string }
+export type SeedVenue = Omit<VenueDoc, Stamps | 'status' | 'submittedBy'> & { id: string }
+export type SeedProducer = Omit<ProducerDoc, Stamps | 'status' | 'submittedBy'> & { id: string }
+export type SeedBand = Omit<BandDoc, Stamps | 'status' | 'submittedBy' | 'ownerId'> & { id: string }
+export type SeedData = { cities: SeedCity[]; venues: SeedVenue[]; producers: SeedProducer[]; bands: SeedBand[] }
+
+export type SeedProgress = { collection: string; done: number; total: number }
+
+/** Grava (ou regrava) os documentos do seed com ids determinísticos. Só admin passa nas regras. */
+export async function importSeedData(client: Client, seed: SeedData, onProgress?: (p: SeedProgress) => void): Promise<{ written: number }> {
+  return run('Erro ao importar dados de exemplo', async () => {
+    const now = nowIso()
+    const groups: Array<{ name: string; docs: Array<{ id: string; data: DocData }> }> = [
+      { name: COLLECTIONS.cities, docs: seed.cities.map(({ id, ...data }) => ({ id, data })) },
+      {
+        name: COLLECTIONS.venues,
+        docs: seed.venues.map(({ id, ...data }) => ({ id, data: { ...data, status: 'verified', submittedBy: null, createdAt: now, updatedAt: now } })),
+      },
+      {
+        name: COLLECTIONS.producers,
+        docs: seed.producers.map(({ id, ...data }) => ({ id, data: { ...data, status: 'verified', submittedBy: null, createdAt: now, updatedAt: now } })),
+      },
+      {
+        name: COLLECTIONS.bands,
+        docs: seed.bands.map(({ id, ...data }) => ({
+          id,
+          data: { ...data, status: 'verified', submittedBy: null, ownerId: null, createdAt: now, updatedAt: now },
+        })),
+      },
+    ]
+    let written = 0
+    for (const group of groups) {
+      let done = 0
+      for (const part of chunk(group.docs, 400)) {
+        const batch = writeBatch(client.db)
+        for (const { id, data } of part) batch.set(ref(client.db, group.name, id), data)
+        await batch.commit()
+        done += part.length
+        written += part.length
+        onProgress?.({ collection: group.name, done, total: group.docs.length })
+      }
     }
-  >
-  start_city: Database['public']['Tables']['cities']['Row'] | null
-  end_city: Database['public']['Tables']['cities']['Row'] | null
+    return { written }
+  })
+}
+
+export type CollectionCounts = { cities: number; venues: number; producers: number; bands: number }
+
+/** Quantos documentos há em cada coleção do mapa (para a tela de administração). */
+export async function fetchCollectionCounts(client: Client): Promise<CollectionCounts> {
+  return run('Erro ao contar registros', async () => {
+    const [cities, venues, producers, bands] = await Promise.all(
+      [COLLECTIONS.cities, COLLECTIONS.venues, COLLECTIONS.producers, COLLECTIONS.bands].map(async (name) => {
+        const snap = await getCountFromServer(col(client.db, name))
+        return snap.data().count
+      }),
+    )
+    return { cities: cities!, venues: venues!, producers: producers!, bands: bands! }
+  })
 }

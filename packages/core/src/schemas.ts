@@ -43,10 +43,10 @@ export const tourFormSchema = z
   .object({
     name: z.string().trim().min(2, 'Dê um nome à turnê').max(80),
     bandName: z.string().trim().min(1, 'Informe a banda').max(80),
-    bandId: z.string().uuid().nullable().default(null),
+    bandId: z.string().min(1).nullable().default(null),
     genres: genresField,
-    startCityId: z.string().uuid({ message: 'Escolha a cidade de partida' }),
-    endCityId: z.string().uuid().nullable().default(null),
+    startCityId: z.string().min(1, 'Escolha a cidade de partida'),
+    endCityId: z.string().min(1).nullable().default(null),
     maxKmPerDay: z.number().int().min(50, 'Mínimo 50 km').max(1500, 'Máximo 1500 km').default(400),
     allowOffDays: z.boolean().default(true),
     capacityMin: z.number().int().min(0).nullable().default(null),
@@ -63,9 +63,9 @@ export type TourFormValues = z.output<typeof tourFormSchema>
 
 export const tourDateFormSchema = z.object({
   date: isoDate,
-  cityId: z.string().uuid().nullable().default(null),
-  venueId: z.string().uuid().nullable().default(null),
-  producerId: z.string().uuid().nullable().default(null),
+  cityId: z.string().min(1).nullable().default(null),
+  venueId: z.string().min(1).nullable().default(null),
+  producerId: z.string().min(1).nullable().default(null),
   status: z.enum(TOUR_DATE_STATUSES as [string, ...string[]]).default('ideia'),
   isFixed: z.boolean().default(false),
   loadInTime: z.string().nullable().default(null),
@@ -83,7 +83,7 @@ export type TourDateFormValues = z.output<typeof tourDateFormSchema>
 
 export const venueSubmissionSchema = z.object({
   name: z.string().trim().min(2, 'Informe o nome da casa').max(120),
-  cityId: z.string().uuid({ message: 'Escolha a cidade' }),
+  cityId: z.string().min(1, 'Escolha a cidade'),
   address: optionalText,
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -106,7 +106,7 @@ export type VenueSubmissionValues = z.output<typeof venueSubmissionSchema>
 
 export const bandSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  cityId: z.string().uuid().nullable().default(null),
+  cityId: z.string().min(1).nullable().default(null),
   genres: genresField,
   links: z
     .object({
@@ -128,8 +128,8 @@ export type BandValues = z.output<typeof bandSchema>
 
 export const producerSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  cityId: z.string().uuid().nullable().default(null),
-  cityIds: z.array(z.string().uuid()).default([]),
+  cityId: z.string().min(1).nullable().default(null),
+  cityIds: z.array(z.string().min(1)).default([]),
   genres: genresField,
   contactName: optionalText,
   contactPhone: phone,

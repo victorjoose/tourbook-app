@@ -7,7 +7,7 @@ import { Link } from 'react-router'
 import { queryKeys } from '../../app/queryClient'
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState'
 import { FullScreenSpinner } from '../../components/ui/Spinner'
-import { supabase } from '../../lib/supabase'
+import { client } from '../../lib/firebase'
 
 const newTourLinkClass =
   'inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-400'
@@ -19,7 +19,7 @@ function updatedLabel(iso: string): string {
 }
 
 export default function ToursListPage() {
-  const tours = useQuery({ queryKey: queryKeys.tours, queryFn: () => fetchMyTours(supabase) })
+  const tours = useQuery({ queryKey: queryKeys.tours, queryFn: () => fetchMyTours(client) })
 
   return (
     <div className="h-full overflow-y-auto">

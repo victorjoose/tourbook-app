@@ -1,4 +1,4 @@
-import type { DealType, TourDateStatus } from './database.types'
+import type { DealType, TourDateStatus } from './firestore'
 
 export const GENRES = [
   'rock',

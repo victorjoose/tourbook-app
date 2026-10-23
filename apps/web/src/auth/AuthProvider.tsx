@@ -1,73 +1,92 @@
-import type { Session, User } from '@supabase/supabase-js'
-import { useQuery } from '@tanstack/react-query'
-import { fetchMyProfile, type Profile } from '@tour/core'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ensureProfile, type Profile } from '@tour/core'
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut as firebaseSignOut,
+  type User,
+} from 'firebase/auth'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { queryKeys } from '../app/queryClient'
-import { supabase } from '../lib/supabase'
+import { auth, client, googleProvider } from '../lib/firebase'
+
+export type AppUser = {
+  id: string
+  email: string | null
+  displayName: string | null
+  avatarUrl: string | null
+}
 
 export type AuthState = {
-  /** undefined enquanto a sessão inicial ainda não foi lida. */
-  session: Session | null | undefined
-  user: User | null
+  /** undefined enquanto o Firebase ainda não respondeu quem está logado. */
+  user: AppUser | null | undefined
   profile: Profile | null
   isAdmin: boolean
+  /** true enquanto não sabemos o usuário ou o perfil ainda carrega. */
   loading: boolean
-  signInWithGoogle: (redirectTo?: string) => Promise<void>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
 
+function toAppUser(u: User): AppUser {
+  return { id: u.uid, email: u.email, displayName: u.displayName, avatarUrl: u.photoURL }
+}
+
+const POPUP_FALLBACK_CODES = new Set(['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment'])
+
+function errorCode(e: unknown): string {
+  return typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : ''
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null | undefined>(undefined)
+  const [user, setUser] = useState<AppUser | null | undefined>(undefined)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
-    let active = true
-    supabase.auth.getSession().then(({ data }) => {
-      if (active) setSession(data.session)
-    })
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
-      setSession(next)
-    })
-    return () => {
-      active = false
-      sub.subscription.unsubscribe()
-    }
+    // Conclui um login por redirect (fallback quando o popup é bloqueado); erros aqui são só de log.
+    getRedirectResult(auth).catch(() => undefined)
+    return onAuthStateChanged(auth, (next) => setUser(next ? toAppUser(next) : null))
   }, [])
-
-  const user = session?.user ?? null
 
   const profileQuery = useQuery({
     queryKey: queryKeys.profile(user?.id ?? 'anon'),
-    queryFn: () => fetchMyProfile(supabase, user!.id),
+    queryFn: () => ensureProfile(client, { uid: user!.id, displayName: user!.displayName, photoURL: user!.avatarUrl }),
     enabled: !!user,
     staleTime: 5 * 60_000,
   })
 
-  const signInWithGoogle = useCallback(async (redirectTo?: string) => {
-    const target = new URL(redirectTo ?? '/', window.location.origin).toString()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: target },
-    })
-    if (error) throw error
+  const signInWithGoogle = useCallback(async () => {
+    try {
+      await signInWithPopup(auth, googleProvider)
+    } catch (e) {
+      if (errorCode(e) === 'auth/popup-closed-by-user' || errorCode(e) === 'auth/cancelled-popup-request') return
+      if (POPUP_FALLBACK_CODES.has(errorCode(e))) {
+        await signInWithRedirect(auth, googleProvider)
+        return
+      }
+      throw e
+    }
   }, [])
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut()
-  }, [])
+    await firebaseSignOut(auth)
+    queryClient.clear()
+  }, [queryClient])
 
   const value = useMemo<AuthState>(
     () => ({
-      session,
       user,
       profile: profileQuery.data ?? null,
       isAdmin: profileQuery.data?.role === 'admin',
-      loading: session === undefined || (!!user && profileQuery.isPending),
+      loading: user === undefined || (!!user && profileQuery.isPending),
       signInWithGoogle,
       signOut,
     }),
-    [session, user, profileQuery.data, profileQuery.isPending, signInWithGoogle, signOut],
+    [user, profileQuery.data, profileQuery.isPending, signInWithGoogle, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

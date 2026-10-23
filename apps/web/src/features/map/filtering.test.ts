@@ -29,6 +29,7 @@ function city(partial: Partial<City> & Pick<City, 'id' | 'name'>): City {
 
 function venue(partial: Partial<Venue> & Pick<Venue, 'id'>): Venue {
   return {
+    createdAt: '2026-01-01T00:00:00Z',
     cityId: 'cwb',
     name: partial.id,
     slug: partial.id,

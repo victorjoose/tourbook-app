@@ -2,13 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchRegionData, type RegionData } from '@tour/core'
 import { useMemo } from 'react'
 import { queryKeys } from '../app/queryClient'
-import { supabase } from '../lib/supabase'
+import { client } from '../lib/firebase'
 
 /** Cidades, casas, produtoras e bandas da região-piloto (cache de 5 min). */
 export function useRegionData() {
   return useQuery({
     queryKey: queryKeys.region,
-    queryFn: () => fetchRegionData(supabase),
+    queryFn: () => fetchRegionData(client),
     staleTime: 5 * 60_000,
   })
 }

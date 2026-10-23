@@ -5,19 +5,19 @@ import { Button } from '../components/ui/Button'
 import { useAuth } from './AuthProvider'
 
 export default function LoginPage() {
-  const { session, signInWithGoogle } = useAuth()
+  const { user, signInWithGoogle } = useAuth()
   const [params] = useSearchParams()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const next = params.get('next') ?? '/'
 
-  if (session) return <Navigate to={next} replace />
+  if (user) return <Navigate to={next} replace />
 
   async function handleGoogle() {
     setBusy(true)
     setError(null)
     try {
-      await signInWithGoogle(next)
+      await signInWithGoogle()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível entrar. Tente de novo.')
       setBusy(false)

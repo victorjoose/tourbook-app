@@ -1,6 +1,6 @@
 export * from './constants'
 export * from './types'
-export type * from './database.types'
+export * from './firestore'
 export * from './mappers'
 export * from './geo'
 export * from './dates'

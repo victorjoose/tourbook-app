@@ -37,6 +37,7 @@ function city(partial: Partial<City> & Pick<City, 'id' | 'name'>): City {
 
 function venue(partial: Partial<Venue> & Pick<Venue, 'id' | 'cityId'>): Venue {
   return {
+    createdAt: '2026-01-01T00:00:00Z',
     name: partial.id,
     slug: partial.id,
     address: null,
@@ -82,6 +83,7 @@ function band(partial: Partial<Band> & Pick<Band, 'id'>): Band {
 
 function tourDate(partial: Partial<TourDate> & Pick<TourDate, 'id' | 'date'>): TourDate {
   return {
+    createdAt: '2026-01-01T00:00:00Z',
     tourId: 't1',
     cityId: null,
     venueId: null,

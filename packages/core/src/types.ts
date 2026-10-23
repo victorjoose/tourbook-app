@@ -3,10 +3,11 @@ import type {
   ChecklistItem,
   DealType,
   EntityStatus,
+  TourDateBandRef,
   TourDateStatus,
   TourMemberRole,
   UserRole,
-} from './database.types'
+} from './firestore'
 
 export type { BandLinks, ChecklistItem, DealType, EntityStatus, TourDateStatus, TourMemberRole, UserRole }
 
@@ -51,6 +52,7 @@ export type Venue = LatLng & {
   notes: string | null
   status: EntityStatus
   submittedBy: string | null
+  createdAt: string
 }
 
 export type Producer = {
@@ -105,11 +107,18 @@ export type Tour = {
   capacityMax: number | null
   notes: string | null
   shareToken: string | null
+  /** Quem tem acesso (inclui o dono). */
+  memberIds: string[]
+  /** uid → papel (o dono é sempre editor). */
+  memberRoles: Record<string, TourMemberRole>
   createdAt: string
   updatedAt: string
 }
 
-export type TourDateBand = { bandId: string; role: string }
+/** Turnê com o resumo mantido no documento (lista de turnês). */
+export type TourSummary = Tour & { dateCount: number; firstDate: string | null; lastDate: string | null }
+
+export type TourDateBand = TourDateBandRef
 
 export type TourDate = {
   id: string
@@ -132,6 +141,7 @@ export type TourDate = {
   checklist: ChecklistItem[]
   notes: string | null
   bands: TourDateBand[]
+  createdAt: string
 }
 
 export type TourMember = { tourId: string; profileId: string; role: TourMemberRole; profile?: Profile }

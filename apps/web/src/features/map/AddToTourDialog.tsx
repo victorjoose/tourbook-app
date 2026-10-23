@@ -23,7 +23,7 @@ import { Input } from '../../components/ui/Input'
 import { Spinner } from '../../components/ui/Spinner'
 import { useRegionData, useRegionIndex } from '../../hooks/useRegionData'
 import { cn } from '../../lib/cn'
-import { supabase } from '../../lib/supabase'
+import { client } from '../../lib/firebase'
 import { plural } from './filtering'
 
 export type AddToTourDialogProps = {
@@ -56,13 +56,13 @@ export function AddToTourDialog({ venue, open, onClose }: AddToTourDialogProps) 
 
   const toursQuery = useQuery({
     queryKey: queryKeys.tours,
-    queryFn: () => fetchMyTours(supabase),
+    queryFn: () => fetchMyTours(client),
     enabled: open,
   })
 
   const tourQuery = useQuery({
     queryKey: queryKeys.tour(tourId ?? ''),
-    queryFn: () => fetchTour(supabase, tourId ?? ''),
+    queryFn: () => fetchTour(client, tourId ?? ''),
     enabled: open && tourId !== null,
   })
 
@@ -78,9 +78,9 @@ export function AddToTourDialog({ venue, open, onClose }: AddToTourDialogProps) 
   const mutation = useMutation({
     mutationFn: async (input: SaveInput) => {
       if (input.dateId) {
-        await updateTourDate(supabase, input.dateId, { venueId: venue.id, cityId: venue.cityId })
+        await updateTourDate(client, input.tourId, input.dateId, { venueId: venue.id, cityId: venue.cityId })
       } else {
-        await addTourDate(supabase, input.tourId, {
+        await addTourDate(client, input.tourId, {
           date: input.date,
           cityId: venue.cityId,
           venueId: venue.id,

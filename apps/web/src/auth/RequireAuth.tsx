@@ -4,11 +4,11 @@ import { useAuth } from './AuthProvider'
 
 /** Protege as rotas filhas: sem sessão, manda para /login guardando o destino. */
 export function RequireAuth() {
-  const { session } = useAuth()
+  const { user } = useAuth()
   const location = useLocation()
 
-  if (session === undefined) return <FullScreenSpinner label="Carregando…" />
-  if (!session) {
+  if (user === undefined) return <FullScreenSpinner label="Carregando…" />
+  if (!user) {
     const next = `${location.pathname}${location.search}`
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />
   }

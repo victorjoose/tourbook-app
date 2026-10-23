@@ -10,7 +10,7 @@ import { Dialog } from '../../components/ui/Dialog'
 import { ErrorState } from '../../components/ui/EmptyState'
 import { FullScreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { useRegionData } from '../../hooks/useRegionData'
-import { supabase } from '../../lib/supabase'
+import { client } from '../../lib/firebase'
 import { useTourWizardStore } from './tourWizardStore'
 import { StepBand } from './wizard/StepBand'
 import { StepConstraints } from './wizard/StepConstraints'
@@ -60,7 +60,7 @@ function Wizard({ data }: { data: RegionData }) {
       if (!user) throw new Error('Você precisa estar logado para salvar a turnê.')
       const tour = parseTourForm(state)
       if (!tour) throw new Error('Revise os campos da turnê antes de salvar.')
-      return createTour(supabase, user.id, { tour, dates: slotsToTourDates(state.slots) })
+      return createTour(client, user.id, { tour, dates: slotsToTourDates(state.slots) })
     },
     onSuccess: async (tour) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.tours })

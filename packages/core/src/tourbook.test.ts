@@ -44,6 +44,7 @@ function makeVenue(overrides: Partial<Venue> & Pick<Venue, 'id' | 'cityId' | 'na
     notes: null,
     status: 'verified',
     submittedBy: null,
+    createdAt: '2026-01-01T00:00:00Z',
     ...overrides,
   }
 }
@@ -73,6 +74,7 @@ function makeDate(overrides: Partial<TourDate> & Pick<TourDate, 'id' | 'date'>):
     venueId: null,
     producerId: null,
     status: 'ideia',
+    createdAt: '2026-01-01T00:00:00Z',
     isFixed: false,
     loadInTime: null,
     soundcheckTime: null,
@@ -157,6 +159,8 @@ const tour: Tour = {
   capacityMax: null,
   notes: null,
   shareToken: null,
+  memberIds: ['user-1'],
+  memberRoles: { 'user-1': 'editor' },
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 }
