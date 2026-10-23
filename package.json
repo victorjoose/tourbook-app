@@ -1,16 +1,17 @@
 {
-  "name": "express-crash",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "tour-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
   "scripts": {
-    "start": "node server",
-    "dev": "node --watch --env-file=.env server"
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "express": "^5.1.0"
+  "engines": {
+    "node": ">=22"
   }
 }
