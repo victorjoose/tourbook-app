@@ -12,6 +12,7 @@ export const PublicTourbookPage = lazy(() => import('../features/tourbook/Public
 export const SubmitVenuePage = lazy(() => import('../features/venues/SubmitVenuePage'))
 export const ModerationPage = lazy(() => import('../features/venues/ModerationPage'))
 export const ProfilePage = lazy(() => import('../features/profile/ProfilePage'))
+export const ImportSeedPage = lazy(() => import('../features/admin/ImportSeedPage'))
 
 export function LazyOutlet() {
   return (

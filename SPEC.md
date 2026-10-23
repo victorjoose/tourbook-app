@@ -9,7 +9,8 @@ Documento de produto (decisões do José): https://claude.ai/artifact/HRcy9jRbhq
 - Layout: **tela dividida** no desktop (lista à esquerda, mapa à direita); no celular, mapa cheio + gaveta inferior.
 - Criador de turnê: passo a passo **e** "preencher buracos" entre datas fixas.
 - Contatos visíveis para qualquer usuário logado. Mapa com **MapLibre** (estilo OpenFreeMap, sem chave).
-- Stack: Vite + React 19 + TypeScript + Tailwind v4 + react-router 8 + TanStack Query + zustand; Supabase (Auth Google, Postgres + PostGIS, Storage); Vercel. Celular depois com **Expo** reaproveitando `@tour/core`.
+- Stack: Vite + React 19 + TypeScript + Tailwind v4 + react-router 8 + TanStack Query + zustand; **Firebase** (Firebase Auth com Google + Cloud Firestore, plano Spark, sem Cloud Functions); Vercel. Celular depois com **Expo** reaproveitando `@tour/core`.
+- Backend decidido em 2026-10-23: Firebase (projeto `tourbook-app`). A conta Supabase da Storm/Scumbags NÃO é usada aqui.
 - Idioma da interface: **pt-BR**. Código (nomes de variáveis, arquivos, comentários curtos) em inglês.
 
 ## Estrutura do repositório
@@ -17,25 +18,35 @@ Documento de produto (decisões do José): https://claude.ai/artifact/HRcy9jRbhq
 ```
 tour-app/
   apps/web/            app web (Vite). Só UI e integração; regras de negócio ficam no core.
-  packages/core/       @tour/core — tipos, schemas zod, consultas Supabase, motor de sugestões,
-                       geração de datas, geo, modelo do tourbook. SEM DOM, SEM React.
-  supabase/migrations  SQL versionado (schema, RLS, funções)
-  supabase/seed.sql    dados de exemplo (cidades reais, casas/produtoras/bandas FICTÍCIAS)
+  packages/core/       @tour/core — tipos, schemas zod, acesso ao Firestore (queries.ts), motor de sugestões,
+                       geração de datas, geo, modelo do tourbook, dados de exemplo (src/seed). SEM DOM, SEM React.
+  firebase/            firestore.rules (segurança), firestore.indexes.json, testes das regras (emulador), README
+  firebase.json        config do Firebase CLI + emuladores (auth 9099, firestore 8080, UI 4000)
+  scripts/seed.ts      importa os dados de exemplo com firebase-admin (emulador ou projeto real)
   .github/workflows    CI (install, typecheck, lint, test, build)
 ```
 
-Comandos na raiz: `pnpm dev`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test`.
+Comandos na raiz: `pnpm dev`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm emulators` (Auth + Firestore locais), `pnpm rules:test` (testes das regras no emulador), `pnpm rules:deploy`, `pnpm seed`.
 
-## Banco de dados (ver `supabase/migrations/0001_init.sql`)
+## Banco de dados — Cloud Firestore (ver `packages/core/src/firestore.ts` e `firebase/firestore.rules`)
 
-Tabelas: `profiles`, `cities`, `venues`, `producers`, `producer_cities`, `producer_venues`, `bands`,
-`tours`, `tour_dates`, `tour_date_bands`, `tour_members`.
+Sem Cloud Functions (exigem plano pago): toda a lógica roda no cliente e as **regras de segurança** garantem o acesso. Ids: slugs determinísticos no seed (`joinville-sc`, `porao-77`), ids automáticos do Firestore no que o usuário cria. Datas/horas gravadas como string ISO.
 
-- `lat`/`lng` são colunas simples (double) e `location` é gerada (PostGIS) para consultas por distância.
-- `status` das entidades do mapa: `verified | pending | rejected`. Usuário comum vê `verified` + o que ele mesmo enviou; `profiles.role = 'admin'` vê e modera tudo.
+Coleções (documentos em camelCase, mesmos nomes dos tipos de domínio):
+- `profiles/{uid}`: `displayName, avatarUrl, role ('user'|'admin'), createdAt, updatedAt`. Criado pelo cliente no 1º login (`ensureProfile`). Regras: leitura para logados; o próprio usuário cria/edita sem mudar `role`; admin edita tudo. **Virar admin**: editar `profiles/{uid}.role = 'admin'` no console do Firebase.
+- `cities/{id}`: `name, state, slug, lat, lng, population`. Leitura para logados; escrita só admin.
+- `venues/{id}`: `cityId, name, slug, address, lat, lng, capacity, genres[], showDays[] (0=dom…6=sáb), dealTypes[], hasPa, hasBackline, acceptsTouringBands, contactName, contactPhone, contactEmail, instagram, website, notes, status ('verified'|'pending'|'rejected'), submittedBy, createdAt, updatedAt`.
+  Regras: lê `verified`, ou o que o próprio usuário enviou, ou admin tudo; cria só com `status='pending'` e `submittedBy=uid`; quem enviou edita enquanto pendente (sem se aprovar); admin modera/apaga.
+- `producers/{id}`: como venues + `cityIds[]` (cidades atendidas) e `venueIds[]` (sem tabelas de junção).
+- `bands/{id}`: como venues + `links {spotify?, instagram?, youtube?, bandcamp?}`, `opensForTouring`, `ownerId` (banda "reivindicada" pode editar a própria ficha).
+- `tours/{id}`: `ownerId, bandId, bandName, name, startCityId, endCityId, maxKmPerDay, allowOffDays, genres[], capacityMin, capacityMax, notes, shareToken|null, memberIds[] (inclui o dono), memberRoles {uid: 'editor'|'viewer'}, dateCount, firstDate, lastDate, createdAt, updatedAt`.
+  Regras: lê quem está em `memberIds` (query `array-contains`); cria com `ownerId=uid`, `memberIds=[uid]`, `memberRoles[uid]='editor'`, `shareToken=null`; dono edita tudo, editor edita sem mexer em dono/membros; só o dono apaga. Resumo `dateCount/firstDate/lastDate` recalculado pelo cliente após cada mutação em datas (`recomputeTourSummary`).
+- `tours/{id}/dates/{dateId}`: `date (YYYY-MM-DD), cityId, venueId, producerId, status, isFixed, loadInTime, soundcheckTime, doorsTime, setTime, dealType, feeCents, costCents, lodging, checklist [{label, done}], notes, bands [{bandId, role}], createdAt, updatedAt`. Regras via `get()` da turnê pai (membro lê, editor escreve).
+- `publicTourbooks/{token}`: `{ tourId, payload: PublicTourbookPayload, updatedAt }` — cópia desnormalizada e sanitizada (sem dono, sem dinheiro, sem `submittedBy`) regravada pelo cliente (`syncPublicTourbook`) ao ativar o link e após cada mutação. Leitura pública (página `/t/:token` sem login); escrita só por editor da turnê e só enquanto `token == tour.shareToken`. Ao desativar o link, apaga-se o documento público antes de zerar o token.
 - `tour_dates.status`: `ideia | contato_feito | negociando | confirmado | realizado | cancelado`.
-- Turnê é do `owner_id`; `tour_members` dá acesso (`editor | viewer`). `tours.share_token` habilita o tourbook público via RPC `get_public_tourbook(token)`.
-- Trigger cria `profiles` ao criar usuário no Auth.
+- Apagar turnê: o cliente apaga tourbook público → datas (em lotes) → turnê (o Firestore não faz cascata).
+
+Emulador local: `pnpm emulators` + `VITE_FIREBASE_USE_EMULATOR=1` no `.env`. Testes das regras em `firebase/firestore.rules.test.ts` (`@firebase/rules-unit-testing`, `pnpm rules:test`).
 
 ## Pacote `@tour/core` — API pública (todas exportadas de `src/index.ts`)
 
@@ -47,11 +58,10 @@ Tabelas: `profiles`, `cities`, `venues`, `producers`, `producer_cities`, `produc
 - `PILOT_STATES = ['SC','PR','SP']`.
 - `DEFAULT_MAX_KM_PER_DAY = 400`, `ROAD_FACTOR = 1.3`, `AVG_SPEED_KMH = 70`.
 
-### `types.ts`
-Tipos de domínio (camelCase) + `Row` types do banco (snake_case) em `database.types.ts`.
-`City`, `Venue`, `Producer`, `Band`, `Tour`, `TourDate`, `TourDateStatus`, `DealType`, `EntityStatus`,
-`LatLng { lat, lng }`, `Bounds { minLat, minLng, maxLat, maxLng }`, `RegionData { cities, venues, producers, bands }`.
-Mapeadores `rowToVenue(row)`, etc., ficam em `mappers.ts`.
+### `types.ts` / `firestore.ts` / `mappers.ts`
+`types.ts`: tipos de domínio (camelCase): `City`, `Venue`, `Producer`, `Band`, `Tour` (com `memberIds`, `memberRoles`), `TourSummary` (+ `dateCount/firstDate/lastDate`), `TourDate`, `TourMember`, `TourWithDates`, `TourDateStatus`, `DealType`, `EntityStatus`, `LatLng { lat, lng }`, `Bounds { minLat, minLng, maxLat, maxLng }`, `RegionData { cities, venues, producers, bands }`, `MapFilters`.
+`firestore.ts`: `Client = { db: Firestore; auth: Auth }`, `COLLECTIONS`, tipos dos documentos (`VenueDoc`, `TourDoc`, `TourDateDoc`, `PublicTourbookDoc`…).
+`mappers.ts`: `docToVenue(id, data)`, `docToTour`, `docToTourDate(tourId, id, data)`, etc. (tolerantes a campos ausentes), `parseChecklist`, `slugify`, `nowIso`.
 
 ### `geo.ts`
 - `haversineKm(a: LatLng, b: LatLng): number`
@@ -110,35 +120,41 @@ casa aberta no dia da semana (alto), gênero/capacidade (médio), produtora/band
 `tourFormSchema`, `tourDateFormSchema`, `venueSubmissionSchema`, `bandSchema`, `producerSchema`. Mensagens em pt-BR.
 
 ### `queries.ts`
-Funções puras de acesso que recebem `SupabaseClient<Database>`:
-`fetchRegionData(sb)`, `fetchCities(sb)`, `searchCities(sb, term)`, `fetchMyTours(sb)`, `fetchTour(sb, id)`,
-`createTour(sb, input)`, `updateTour`, `upsertTourDate`, `deleteTourDate`, `setTourDateBands`,
-`submitVenue`, `fetchPendingSubmissions`, `moderateVenue`, `enableShareLink`, `fetchPublicTourbook(sb, token)`.
+Funções de acesso ao Firestore; todas recebem `client: Client` (`{ db, auth }`, em `apps/web/src/lib/firebase.ts`) e lançam `DataError` (mensagem pt-BR, `code` do Firestore):
+- Perfil: `fetchMyProfile(client, uid)`, `ensureProfile(client, { uid, displayName, photoURL })`, `updateMyProfile(client, uid, { displayName })`.
+- Região: `fetchRegionData(client)` (cidades + casas/produtoras/bandas `verified`, ordenadas por nome), `fetchCities(client)`, `searchCities(client, term, limit?)`.
+- Casas: `submitVenue(client, uid, values)`, `fetchMySubmissions(client, uid)`, `fetchPendingVenues(client)`, `moderateVenue(client, venueId, 'verified'|'rejected')`.
+- Turnês: `fetchMyTours(client): TourSummary[]`, `fetchTour(client, tourId): TourWithDates | null`, `createTour(client, ownerId, { tour, dates })`, `updateTour(client, tourId, patch)`, `deleteTour(client, tourId)`.
+- Datas (subcoleção, por isso levam `tourId`): `addTourDate(client, tourId, { date, ... })`, `updateTourDate(client, tourId, dateId, patch)` (patch aceita `checklist` e `bands`), `deleteTourDate(client, tourId, dateId)`, `setTourDateBands(client, tourId, dateId, bandIds)`, `recomputeTourSummary(client, tourId)`. Toda mutação em datas já recalcula o resumo e sincroniza o tourbook público.
+- Link público: `enableShareLink(client, tourId): token`, `disableShareLink(client, tourId)`, `syncPublicTourbook(client, tourId)`, `fetchPublicTourbook(client, token): PublicTourbookPayload | null` com `PublicTourbookPayload = { tour: Tour; dates: TourDate[]; lookups: { cities; venues; bands; producers }; generatedAt }` — passa direto para `buildTourbook({ ...payload, hideMoney: true })`.
+- Admin: `importSeedData(client, seed: SeedData, onProgress?)` (lotes de 400, ids determinísticos), `fetchCollectionCounts(client)`. Dados de exemplo tipados em `@tour/core/seed` (`SEED_DATA`).
+- `randomUuid()`.
 
 ## App web (`apps/web/src`)
 
 ```
 main.tsx                 providers (QueryClient, Router, Auth)
-app/router.tsx           rotas (lazy)
-app/AppShell.tsx         topo no desktop / barra inferior no celular: Mapa · Turnês · Perfil
-lib/supabase.ts          client (VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY)
-lib/env.ts
-auth/                    AuthProvider, useAuth, RequireAuth, LoginPage (Google)
-components/ui/           Button, Input, Select, Textarea, Chip, Card, Dialog, Spinner, EmptyState, Tabs
-hooks/useRegionData.ts   cidades + casas + produtoras + bandas (cache 5 min)
-features/map/            MapPage (tela dividida), MapView (maplibre), CitySearch, Filters, ExplorePanel,
-                         VenueCard/ProducerCard/BandCard, VenueDetail/ProducerDetail/BandDetail, mapStore (zustand)
-features/tours/          ToursListPage, NewTourPage (assistente), TourPage, FillGapsPanel, tourWizardStore
-features/tourbook/       TourbookPage (PDFViewer + download), TourbookDocument (@react-pdf), PublicTourbookPage (/t/:token)
-features/venues/         SubmitVenuePage, ModerationPage (admin)
+app/router.tsx           rotas (lazy em app/pages.tsx)
+app/AppShell.tsx         topo no desktop / barra inferior no celular: Mapa · Turnês · Perfil (+ Moderação para admin)
+lib/firebase.ts          initializeApp + auth + db + googleProvider + `client: Client` (conecta no emulador se VITE_FIREBASE_USE_EMULATOR=1)
+lib/env.ts               VITE_FIREBASE_* e VITE_MAP_STYLE_URL
+auth/                    AuthProvider (useAuth: user {id,email,displayName,avatarUrl} | null | undefined, profile, isAdmin, loading, signInWithGoogle, signOut), RequireAuth/RequireAdmin, LoginPage (Google via popup; redirect quando bloqueado)
+components/ui/           Button, Input, Select, Textarea, Checkbox, Field, Chip, Badge, Card, SectionTitle, Dialog, Spinner, EmptyState, ErrorState, Tabs
+hooks/useRegionData.ts   cidades + casas + produtoras + bandas (cache 5 min) + useRegionIndex (Maps por id)
+features/map/            MapPage (tela dividida), MapView (maplibre), CitySearch, FiltersBar, ExplorePanel,
+                         VenueCard/ProducerCard/BandCard, VenueDetail/ProducerDetail/BandDetail, AddToTourDialog, mapStore (zustand)
+features/tours/          ToursListPage, NewTourPage (assistente em wizard/), TourPage + tour/ (DateCard, DateEditorDialog, FillGapsPanel, ShareDialog, FinanceSummary…)
+features/tourbook/       TourbookPage (PDFViewer + download), TourbookDocument (@react-pdf), TourbookHtml, PublicTourbookPage (/t/:token)
+features/venues/         SubmitVenuePage (+ VenueForm, LocationPicker, MySubmissions), ModerationPage (admin)
 features/profile/        ProfilePage
+features/admin/          ImportSeedPage (/admin/importar: importa SEED_DATA com importSeedData; mostra contagens)
 ```
 
 Rotas:
 - `/login`
 - `/` MapPage · `/casas/:id` · `/produtoras/:id` · `/bandas/:id` (detalhe dentro da tela dividida)
 - `/turnes` · `/turnes/nova` · `/turnes/:id` · `/turnes/:id/tourbook`
-- `/casas/sugerir` · `/admin/moderacao`
+- `/casas/sugerir` · `/admin/moderacao` · `/admin/importar`
 - `/perfil`
 - `/t/:token` tourbook público (sem login)
 
@@ -147,15 +163,22 @@ Convenções de UI:
 - Mobile-first; breakpoint `md` = tela dividida.
 - Textos em pt-BR; datas com `formatDatePt`; dinheiro com `formatCurrencyBRL`.
 - Estados: carregando (Spinner), vazio (EmptyState com ação), erro (mensagem + tentar de novo).
-- Nada de `any`. Acesso a dados só via `@tour/core/queries` + TanStack Query. Mutations invalidam as queries.
+- Nada de `any`. Acesso a dados só via `@tour/core` (queries) + TanStack Query com `queryKeys` de `app/queryClient.ts`. Mutations invalidam as queries.
 - Contatos: botões WhatsApp (`whatsappUrl`), e-mail (`mailto:`), Instagram.
+- Permissão de edição na turnê: `user.id === tour.ownerId || tour.memberRoles[user.id] === 'editor'`.
 
 ## Variáveis de ambiente (`apps/web/.env.example`)
 ```
-VITE_SUPABASE_URL=
-VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=<projeto>.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=<projeto>
+VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_STORAGE_BUCKET=        (opcional)
+VITE_FIREBASE_MESSAGING_SENDER_ID=   (opcional)
+VITE_FIREBASE_USE_EMULATOR=          (1 para usar o emulador local)
 VITE_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty
 ```
+A config web do Firebase é pública por natureza (a segurança vem das regras); ainda assim, o `.env` não vai para o git. Na Vercel, defina as mesmas variáveis e adicione o domínio da Vercel em Authentication → Settings → Authorized domains no console do Firebase.
 
 ## Fora do MVP
-Pagamentos, contratos, chat, ingressos, app nas lojas, IA, API de rotas (usa estimativa haversine × 1,3).
+Pagamentos, contratos, chat, ingressos, app nas lojas, IA, API de rotas (usa estimativa haversine × 1,3), convite de membros para a turnê (o modelo `memberIds/memberRoles` já existe; sem Cloud Functions não há como achar um usuário pelo e-mail, então fica para depois).

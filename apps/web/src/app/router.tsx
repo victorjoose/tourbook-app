@@ -5,6 +5,7 @@ import {
   LazyOutlet,
   LoginPage,
   MapPage,
+  ImportSeedPage,
   ModerationPage,
   NewTourPage,
   ProfilePage,
@@ -40,7 +41,10 @@ export const router = createBrowserRouter([
               { path: '/perfil', element: <ProfilePage /> },
               {
                 element: <RequireAdmin />,
-                children: [{ path: '/admin/moderacao', element: <ModerationPage /> }],
+                children: [
+                  { path: '/admin/moderacao', element: <ModerationPage /> },
+                  { path: '/admin/importar', element: <ImportSeedPage /> },
+                ],
               },
             ],
           },
