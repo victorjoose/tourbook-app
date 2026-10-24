@@ -5,9 +5,10 @@ import { Button } from '../components/ui/Button'
 import { useAuth } from './AuthProvider'
 
 export default function LoginPage() {
-  const { user, signInWithGoogle } = useAuth()
+  const { user, signInWithGoogle, authError } = useAuth()
   const [params] = useSearchParams()
-  const [error, setError] = useState<string | null>(null)
+  const [localError, setError] = useState<string | null>(null)
+  const error = localError ?? authError
   const [busy, setBusy] = useState(false)
   const next = params.get('next') ?? '/'
 

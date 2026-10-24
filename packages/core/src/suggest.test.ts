@@ -227,6 +227,23 @@ describe('suggestNextCities', () => {
     expect(floripaAfter?.reasons).toContain('Afasta de São Paulo (dia 09/03)')
   })
 
+  it('gives no direction signal when the previous city is the next fixed city (round trip home)', () => {
+    const withNext = suggestNextCities({
+      prevCity: joinville,
+      nextFixed: { city: joinville, date: '2026-03-15' },
+      date: SATURDAY,
+      constraints: baseConstraints,
+      data,
+    })
+    const without = suggestNextCities({ prevCity: joinville, date: SATURDAY, constraints: baseConstraints, data })
+    expect(withNext.length).toBeGreaterThan(0)
+    for (const s of withNext) {
+      const base = without.find((b) => b.city.id === s.city.id)
+      expect(s.score).toBeCloseTo(base?.score ?? NaN, 5)
+      expect(s.reasons.some((r) => r.startsWith('Afasta de'))).toBe(false)
+    }
+  })
+
   it('cuts candidates that cannot reach the next fixed date in time', () => {
     // São Paulo the very next day: nothing within 400 km of Joinville is also within 400 km of SP.
     const result = suggestNextCities({

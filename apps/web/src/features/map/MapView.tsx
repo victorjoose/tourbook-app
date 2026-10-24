@@ -155,8 +155,10 @@ export function MapView({
   const loadedRef = useRef(false)
   const markersRef = useRef<Marker[]>([])
   const venuesRef = useRef<Venue[]>(venues)
+  const routeRef = useRef<LatLng[]>(route)
   const handlersRef = useRef({ onVenueClick, onBoundsChange, onMapClick })
   venuesRef.current = venues
+  routeRef.current = route
   handlersRef.current = { onVenueClick, onBoundsChange, onMapClick }
 
   useImperativeHandle(ref, () => ({
@@ -197,6 +199,9 @@ export function MapView({
       loadedRef.current = true
       const src = map.getSource(VENUES_SOURCE) as GeoJSONSource | undefined
       src?.setData(venuesToGeoJson(venuesRef.current, selectedVenueId))
+      // A rota costuma chegar antes do estilo carregar (TourPage, revisão do wizard).
+      const routeSrc = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined
+      routeSrc?.setData(routeToGeoJson(routeRef.current))
       emitBounds()
     })
     map.on('moveend', emitBounds)

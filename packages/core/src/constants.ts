@@ -92,6 +92,9 @@ export const STATE_NAMES: Record<string, string> = {
 }
 
 export const DEFAULT_MAX_KM_PER_DAY = 400
+/** Limites aceitos para km por dia (schema, wizard e edição da turnê). */
+export const MIN_KM_PER_DAY = 50
+export const MAX_KM_PER_DAY = 1500
 /** Estimativa: estrada ≈ linha reta × 1,3. */
 export const ROAD_FACTOR = 1.3
 export const AVG_SPEED_KMH = 70

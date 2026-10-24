@@ -1,5 +1,7 @@
 // Pure helpers shared by the PDF document, the HTML rendering and the pages (unit-tested).
-import { buildTourbook, formatCurrencyBRL, formatDatePt, formatHours, formatKm, slugify } from '@tour/core'
+import { buildTourbook, formatCurrencyBRL, formatDatePt, formatHours, formatKm, slugify, toIsoDate } from '@tour/core'
+import { isValid } from 'date-fns'
+import { safeHttpUrl } from '../../lib/safeUrl'
 import type { RegionData, Tourbook, TourbookContact, TourbookDay, TourWithDates } from '@tour/core'
 
 export const PDF_FILE_SUFFIX = '-tourbook.pdf'
@@ -21,18 +23,7 @@ export function buildTourbookFromTour(tour: TourWithDates, region: RegionData, h
   })
 }
 
-/** Only http(s) URLs may become hrefs (never javascript:, data: or anything else). */
-export function safeHttpUrl(value: string | null | undefined): string | null {
-  const trimmed = value?.trim() ?? ''
-  if (trimmed === '') return null
-  let url: URL
-  try {
-    url = new URL(trimmed)
-  } catch {
-    return null
-  }
-  return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
-}
+export { safeHttpUrl }
 
 const INSTAGRAM_HOST = /^(?:https?:\/\/)?(?:www\.)?instagram\.com(?:\/|$)/i
 const HANDLE = /^[A-Za-z0-9._]{1,30}$/
@@ -151,11 +142,8 @@ export function bandLine(band: TourbookDay['bands'][number]): string {
 
 /** 'sex, 06/03' from an ISO timestamp; null when the value is not a date. */
 export function generatedAtLabel(generatedAt: string | null | undefined): string | null {
-  const iso = generatedAt?.slice(0, 10) ?? ''
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
-  try {
-    return formatDatePt(iso, 'short')
-  } catch {
-    return null
-  }
+  if (!generatedAt) return null
+  // Instante UTC → dia do calendário local (às 22h em Brasília ainda é "hoje").
+  const instant = new Date(generatedAt)
+  return isValid(instant) ? formatDatePt(toIsoDate(instant), 'short') : null
 }

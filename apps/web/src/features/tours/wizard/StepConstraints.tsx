@@ -1,11 +1,11 @@
-import { PILOT_STATES, STATE_NAMES, formatKm } from '@tour/core'
+import { MAX_KM_PER_DAY, MIN_KM_PER_DAY, PILOT_STATES, STATE_NAMES, formatKm } from '@tour/core'
 import { Chip } from '../../../components/ui/Chip'
 import { Checkbox, Field, Input } from '../../../components/ui/Input'
 import { useTourWizardStore } from '../tourWizardStore'
 import { tourFormErrors } from './validation'
 
-const MIN_KM = 100
-const MAX_KM = 1000
+const MIN_KM = MIN_KM_PER_DAY
+const MAX_KM = MAX_KM_PER_DAY
 const KM_STEP = 25
 
 function parseOptionalInt(value: string): number | null {

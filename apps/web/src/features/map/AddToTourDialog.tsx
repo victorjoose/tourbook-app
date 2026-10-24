@@ -36,7 +36,7 @@ const NEW_DATE = 'new'
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const NO_DATES: TourDate[] = []
 
-type SaveInput = { tourId: string; dateId: string | null; date: string }
+type SaveInput = { tourId: string; dateId: string | null; date: string; clearProducer: boolean }
 
 /** Pick one of my tours, then an existing date (or a new one) to put this venue in. */
 export function AddToTourDialog({ venue, open, onClose }: AddToTourDialogProps) {
@@ -74,7 +74,12 @@ export function AddToTourDialog({ venue, open, onClose }: AddToTourDialogProps) 
   const mutation = useMutation({
     mutationFn: async (input: SaveInput) => {
       if (input.dateId) {
-        await updateTourDate(client, input.tourId, input.dateId, { venueId: venue.id, cityId: venue.cityId })
+        await updateTourDate(client, input.tourId, input.dateId, {
+          venueId: venue.id,
+          cityId: venue.cityId,
+          // A produtora da data continua só se também atende a cidade da casa escolhida.
+          ...(input.clearProducer ? { producerId: null } : {}),
+        })
       } else {
         await addTourDate(client, input.tourId, {
           date: input.date,
@@ -98,7 +103,9 @@ export function AddToTourDialog({ venue, open, onClose }: AddToTourDialogProps) 
     if (!tourId || !canSave) return
     const existing = choice === NEW_DATE ? null : dates.find((d) => d.id === choice)
     if (choice !== NEW_DATE && !existing) return
-    mutation.mutate({ tourId, dateId: existing?.id ?? null, date: existing?.date ?? newDate })
+    const producer = existing?.producerId ? index.producers.get(existing.producerId) : undefined
+    const clearProducer = !!existing?.producerId && !(producer?.cityIds.includes(venue.cityId) ?? false)
+    mutation.mutate({ tourId, dateId: existing?.id ?? null, date: existing?.date ?? newDate, clearProducer })
   }
 
   const selectedTour = toursQuery.data?.find((t) => t.id === tourId)

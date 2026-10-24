@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router'
+import { ErrorState } from '../components/ui/EmptyState'
 import { FullScreenSpinner } from '../components/ui/Spinner'
 import { useAuth } from './AuthProvider'
 
@@ -17,8 +18,9 @@ export function RequireAuth() {
 
 /** Só admins. */
 export function RequireAdmin() {
-  const { loading, isAdmin } = useAuth()
+  const { loading, isAdmin, profileError, retryProfile } = useAuth()
   if (loading) return <FullScreenSpinner label="Carregando…" />
+  if (profileError) return <ErrorState message={profileError} onRetry={() => void retryProfile()} />
   if (!isAdmin) return <Navigate to="/" replace />
   return <Outlet />
 }

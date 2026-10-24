@@ -25,10 +25,21 @@ Documento de passagem de bastão para quem continuar (pessoa ou Claude). Leia ju
 5. Deploy na Vercel (Root Directory `apps/web`, env `VITE_FIREBASE_*` + `VITE_MAP_STYLE_URL`) e adicionar o domínio da Vercel em Authentication → Settings → Authorized domains.
 6. Marcar o PR #1 como pronto e fazer merge em `main` quando o José aprovar.
 
-## Revisão automática em andamento (pode ter parado por limite de uso)
-Uma rodada de revisão adversarial (segurança, correção, UX, qualidade → verificação → correções) estava rodando às 03:30 UTC. Se ela terminou, as correções ficam **no working tree sem commit** em `/home/user/tourbook-app` (ambiente desta sessão). Quem continuar deve:
-- rodar `git status`; se houver mudanças, rodar os quatro comandos de verificação acima e commitar/pushar em `feat/mvp`;
-- se o ambiente desta sessão não existir mais, nada se perdeu: tudo o que está em `feat/mvp` é o estado íntegro e verde; a revisão pode ser refeita (ver "Pendências conhecidas").
+## Revisão adversarial (concluída em 2026-10-24)
+Quatro revisores (segurança, correção, UX, qualidade) levantaram 29 achados; 26 foram confirmados por verificação independente. Os principais já foram corrigidos e estão em `feat/mvp`:
+- **Segurança (alto):** uma turnê com `shareToken` copiado podia sobrescrever/apagar o tourbook público de outra. Regra de `publicTourbooks` agora amarra update/delete ao `tourId` já gravado (testes no emulador cobrem). Perfis não são mais listáveis por usuário comum (`get` sim, `list` só admin).
+- **Mapa:** a linha da rota não aparecia no primeiro carregamento (TourPage e revisão do wizard).
+- **Sugestões:** quando a cidade anterior era o próprio destino (volta para casa), tudo ganhava "Afasta de X"; agora não há sinal de direção nesse caso.
+- **Login:** erros do Firebase Auth em pt-BR (domínio não autorizado, sem conexão etc.), erro do redirect aparece na tela, falha ao carregar perfil mostra erro com "tentar de novo" nas rotas de admin.
+- **Mapa vazio:** sem dados, a tela inicial explica e leva o admin para `/admin/importar`; no celular a gaveta abre sozinha em erro/banco vazio.
+- Links de casa/produtora na página da turnê; produtora é limpa ao mover uma data para casa de outra cidade; "Atualizado em" do tourbook público usa o dia local; dias da semana do formulário de casa começam na segunda; limites de km/dia unificados (50–1500); só links http(s) viram href (moderação e bandas).
+
+Ficaram para depois (achados médios/baixos de UX e qualidade, não bloqueiam o teste):
+- Editar gêneros/capacidade/cidade de partida e chegada depois de criar a turnê (hoje só nome, banda e km/dia).
+- Unificar rótulos de horários ('Portas' vs 'Porta', 'Passagem' vs 'Passagem de som') entre página da turnê e tourbook.
+- Deduplicar helpers entre core e web (`plural`, `capitalize`, `cityLabel`, `byName`…), três comboboxes parecidos (`SearchSelect`, `CitySelect`, wizard), `SuggestionRow` duplicando `SuggestionCard`, props/chave de cache mortas no mapa.
+- `queries.ts`: cada mutação em data relê a turnê inteira mesmo sem link público (otimizar `afterDatesChanged`); enums zod como `[string, ...string[]]` perdem o tipo literal; `fetchPublicTourbook` confia no payload sem validar.
+- Botões de contato (WhatsApp/e-mail) direto no cartão da data.
 
 ## Pendências conhecidas (levantadas pelos agentes; nenhuma bloqueia o teste)
 - Convite de membros para a turnê não tem UI (modelo `memberIds/memberRoles` existe; sem Cloud Functions não dá para achar usuário por e-mail). Fora do MVP.

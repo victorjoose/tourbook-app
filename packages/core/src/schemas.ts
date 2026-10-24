@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { DEAL_TYPES, GENRES, TOUR_DATE_STATUSES } from './constants'
+import { DEAL_TYPES, GENRES, MAX_KM_PER_DAY, MIN_KM_PER_DAY, TOUR_DATE_STATUSES } from './constants'
 
 const isoDate = z
   .string()
@@ -47,7 +47,12 @@ export const tourFormSchema = z
     genres: genresField,
     startCityId: z.string().min(1, 'Escolha a cidade de partida'),
     endCityId: z.string().min(1).nullable().default(null),
-    maxKmPerDay: z.number().int().min(50, 'Mínimo 50 km').max(1500, 'Máximo 1500 km').default(400),
+    maxKmPerDay: z
+      .number()
+      .int()
+      .min(MIN_KM_PER_DAY, `Mínimo ${MIN_KM_PER_DAY} km`)
+      .max(MAX_KM_PER_DAY, `Máximo ${MAX_KM_PER_DAY} km`)
+      .default(400),
     allowOffDays: z.boolean().default(true),
     capacityMin: z.number().int().min(0).nullable().default(null),
     capacityMax: z.number().int().min(0).nullable().default(null),

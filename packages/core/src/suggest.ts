@@ -300,7 +300,8 @@ export function suggestNextCities(input: SuggestNextCitiesInput): CitySuggestion
     // Direction relative to the next fixed date / end city.
     if (nextFixed && kmToNext !== undefined) {
       const target = `${nextFixed.city.name} (dia ${dayMonth(nextFixed.date)})`
-      if (kmPrevToNext !== null) {
+      // Sem distância a melhorar (cidade anterior é o próprio destino) não há sinal de direção.
+      if (kmPrevToNext !== null && kmPrevToNext > 0) {
         if (kmToNext < kmPrevToNext) {
           score += SUGGEST_WEIGHTS.TOWARD_NEXT
           reasons.push(`No caminho para ${target}`)

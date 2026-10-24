@@ -1,4 +1,5 @@
 import type { Band, City } from '@tour/core'
+import { safeHttpUrl } from '../../lib/safeUrl'
 import { AtSign, Disc3, Guitar, Locate, Music, Play } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Chip'
@@ -14,7 +15,11 @@ export type BandDetailProps = {
 }
 
 export function BandDetail({ band, city, onShowCity }: BandDetailProps) {
-  const { spotify, instagram, youtube, bandcamp } = band.links
+  const { instagram } = band.links
+  // Links vêm de quem cadastrou a banda: só http(s) vira href.
+  const spotify = safeHttpUrl(band.links.spotify)
+  const youtube = safeHttpUrl(band.links.youtube)
+  const bandcamp = safeHttpUrl(band.links.bandcamp)
   const hasLinks = Boolean(spotify || instagram || youtube || bandcamp)
 
   return (

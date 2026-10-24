@@ -83,6 +83,13 @@ describeWithEmulator('firestore.rules', () => {
       await assertFails(setDoc(doc(authed(UIDS.alice), 'profiles', UIDS.bob), profileDoc()))
     })
 
+    it('plain user cannot list profiles (no account enumeration); admin can', async () => {
+      await seed(env, { [`profiles/${UIDS.alice}`]: profileDoc({ role: 'admin' }), [`profiles/${UIDS.bob}`]: profileDoc() })
+      await assertFails(getDocs(collection(authed(UIDS.bob), 'profiles')))
+      await assertSucceeds(getDoc(doc(authed(UIDS.bob), 'profiles', UIDS.alice)))
+      await assertSucceeds(getDocs(collection(authed(UIDS.alice), 'profiles')))
+    })
+
     it('user updates own displayName', async () => {
       await seed(env, { [`profiles/${UIDS.alice}`]: profileDoc() })
       await assertSucceeds(updateDoc(doc(authed(UIDS.alice), 'profiles', UIDS.alice), { displayName: 'Alice', updatedAt: NOW }))
@@ -508,6 +515,15 @@ describeWithEmulator('firestore.rules', () => {
 
     it('editor writes too', async () => {
       await assertSucceeds(setDoc(doc(authed(UIDS.bob), 'publicTourbooks', TOKEN), publicDoc(TOUR_ID)))
+    })
+
+    it('another tour whose shareToken copies the token cannot hijack an existing public doc', async () => {
+      await seed(env, { 'tours/tour-evil': tourDoc(UIDS.dave, { shareToken: TOKEN }) })
+      await assertFails(setDoc(doc(authed(UIDS.dave), 'publicTourbooks', TOKEN), publicDoc('tour-evil')))
+      await assertFails(updateDoc(doc(authed(UIDS.dave), 'publicTourbooks', TOKEN), { tourId: 'tour-evil', updatedAt: NOW }))
+      await assertFails(deleteDoc(doc(authed(UIDS.dave), 'publicTourbooks', TOKEN)))
+      // The legitimate owner still re-syncs its own doc.
+      await assertSucceeds(setDoc(doc(authed(UIDS.alice), 'publicTourbooks', TOKEN), publicDoc(TOUR_ID)))
     })
 
     it('cannot write under an id different from the shareToken', async () => {

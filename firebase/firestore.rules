@@ -61,7 +61,9 @@ service cloud.firestore {
     // profiles/{userId}
     // ----------------------------------------------------------------------
     match /profiles/{userId} {
-      allow read: if signedIn();
+      // Só leitura individual: listar perfis (enumerar usuários) é coisa de admin.
+      allow get: if signedIn();
+      allow list: if isAdmin();
       allow create: if signedIn() && uid() == userId && incoming().get('role', '') == 'user';
       allow update: if isAdmin()
         || (signedIn() && uid() == userId && incoming().get('role', 'user') == resource.data.get('role', 'user'));
@@ -182,8 +184,16 @@ service cloud.firestore {
       // Só `get`: o token é a chave de acesso, então ninguém pode listar os tokens.
       allow get: if true;
       allow list: if false;
-      allow create, update: if signedIn()
+      allow create: if signedIn()
         && incomingTourId() is string
+        && exists(tourPath(incomingTourId()))
+        && tourOfIncoming().get('shareToken', null) == token
+        && editorOf(tourOfIncoming());
+      // Regravar só pode manter o mesmo tourId: outra turnê com shareToken igual
+      // ao token não pode sequestrar um documento público já existente.
+      allow update: if signedIn()
+        && incomingTourId() is string
+        && incomingTourId() == existingTourId()
         && exists(tourPath(incomingTourId()))
         && tourOfIncoming().get('shareToken', null) == token
         && editorOf(tourOfIncoming());

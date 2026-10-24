@@ -1,4 +1,5 @@
 import { DEAL_TYPE_LABELS, mapsUrl, type City, type Venue } from '@tour/core'
+import { safeHttpUrl } from '../../lib/safeUrl'
 import { Check, ChevronDown, Clock, ExternalLink, MapPin, UserRound, X } from 'lucide-react'
 import { useId, useMemo, type ReactNode } from 'react'
 import { Button } from '../../components/ui/Button'
@@ -109,9 +110,13 @@ export function PendingVenueCard({ venue, city, expanded, onToggle, onModerate, 
             <Row label="Instagram">{venue.instagram ?? '—'}</Row>
             <Row label="Site">
               {venue.website ? (
-                <a href={venue.website} target="_blank" rel="noreferrer" className="break-all text-brand-300 underline">
-                  {venue.website}
-                </a>
+                safeHttpUrl(venue.website) ? (
+                  <a href={safeHttpUrl(venue.website) ?? undefined} target="_blank" rel="noreferrer" className="break-all text-brand-300 underline">
+                    {venue.website}
+                  </a>
+                ) : (
+                  <span className="break-all">{venue.website}</span>
+                )
               ) : (
                 '—'
               )}

@@ -24,6 +24,7 @@ import {
 } from './filtering'
 import { useMapStore } from './mapStore'
 import { useIsDesktop } from '../../hooks/useIsDesktop'
+import { useAuth } from '../../auth/AuthProvider'
 
 type DetailKind = 'venue' | 'producer' | 'band'
 type Detail = { kind: DetailKind; id: string }
@@ -88,6 +89,8 @@ export default function MapPage() {
 
   const region = useRegionData()
   const data = region.data
+  const { isAdmin } = useAuth()
+  const databaseEmpty = region.isSuccess && (data?.cities.length ?? 0) === 0
   const index = useRegionIndex(data)
 
   const bounds = useMapStore((s) => s.bounds)
@@ -102,6 +105,11 @@ export default function MapPage() {
   const setSelectedCityId = useMapStore((s) => s.setSelectedCityId)
   const setTab = useMapStore((s) => s.setTab)
   const setSheet = useMapStore((s) => s.setSheet)
+
+  // No celular a gaveta começa fechada: erro e banco vazio precisam aparecer mesmo assim.
+  useEffect(() => {
+    if (!isDesktop && (region.isError || databaseEmpty)) setSheet('half')
+  }, [isDesktop, region.isError, databaseEmpty, setSheet])
 
   const detail = useMemo(() => detailFromPath(location.pathname, id), [location.pathname, id])
 
@@ -234,6 +242,24 @@ export default function MapPage() {
           onRetry={() => void region.refetch()}
         />
       </div>
+    )
+  } else if (databaseEmpty) {
+    panelBody = (
+      <EmptyState
+        title="Nenhum dado cadastrado ainda"
+        description={
+          isAdmin
+            ? 'Importe os dados de exemplo (cidades de SC/PR/SP, casas, produtoras e bandas) para liberar o mapa e as turnês.'
+            : 'O mapa depende da lista de cidades e casas. Peça ao administrador para importar os dados.'
+        }
+        action={
+          isAdmin ? (
+            <Link to="/admin/importar" className="text-sm font-medium text-brand-300 underline">
+              Importar dados de exemplo
+            </Link>
+          ) : undefined
+        }
+      />
     )
   } else if (detail) {
     // Keyed by path so switching between details starts scrolled to the top.

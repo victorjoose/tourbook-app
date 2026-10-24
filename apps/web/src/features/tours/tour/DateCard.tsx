@@ -10,6 +10,7 @@ import {
   type TourDateStatus,
 } from '@tour/core'
 import { BedDouble, Briefcase, ChevronDown, Clock, ListChecks, Music, Pencil, Pin, Route, Wallet } from 'lucide-react'
+import { Link } from 'react-router'
 import type { ReactNode } from 'react'
 import { Button } from '../../../components/ui/Button'
 import { Badge } from '../../../components/ui/Chip'
@@ -134,7 +135,13 @@ export function DateCard({ resolved, index, tourId, canEdit, onEdit }: DateCardP
             <p className="text-sm">
               <span className={cn(!city && 'text-ink-muted')}>{place}</span>
               <span className="text-ink-muted"> · </span>
-              <span className={cn(!venue && 'text-ink-muted')}>{venue?.name ?? 'Sem casa'}</span>
+              {venue ? (
+                <Link to={`/casas/${venue.id}`} className="hover:underline">
+                  {venue.name}
+                </Link>
+              ) : (
+                <span className="text-ink-muted">Sem casa</span>
+              )}
             </p>
           </div>
 
@@ -157,7 +164,14 @@ export function DateCard({ resolved, index, tourId, canEdit, onEdit }: DateCardP
               </DetailRow>
             )}
             {date.lodging && <DetailRow icon={<BedDouble className="h-3.5 w-3.5" />}>{date.lodging}</DetailRow>}
-            {producer && <DetailRow icon={<Briefcase className="h-3.5 w-3.5" />}>Produtora {producer.name}</DetailRow>}
+            {producer && (
+              <DetailRow icon={<Briefcase className="h-3.5 w-3.5" />}>
+                Produtora{' '}
+                <Link to={`/produtoras/${producer.id}`} className="hover:underline">
+                  {producer.name}
+                </Link>
+              </DetailRow>
+            )}
             {bands.length > 0 && (
               <DetailRow icon={<Music className="h-3.5 w-3.5" />}>Com {joinNamesPt(bands.map((b) => b.name))}</DetailRow>
             )}

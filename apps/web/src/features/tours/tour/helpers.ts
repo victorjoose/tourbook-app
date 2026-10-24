@@ -2,6 +2,8 @@
 import {
   DEAL_TYPES,
   TOUR_DATE_STATUSES,
+  MAX_KM_PER_DAY,
+  MIN_KM_PER_DAY,
   addDaysIso,
   driveHoursEstimate,
   formatHours,
@@ -613,8 +615,7 @@ export type TourEditorValues = { name: string; bandName: string; maxKmPerDay: st
 
 export type TourEditorErrors = Partial<Record<keyof TourEditorValues, string>>
 
-export const MIN_KM_PER_DAY = 50
-export const MAX_KM_PER_DAY = 1500
+export { MAX_KM_PER_DAY, MIN_KM_PER_DAY }
 
 export function tourEditorValuesOf(tour: Pick<Tour, 'name' | 'bandName' | 'maxKmPerDay'>): TourEditorValues {
   return { name: tour.name, bandName: tour.bandName, maxKmPerDay: String(tour.maxKmPerDay) }

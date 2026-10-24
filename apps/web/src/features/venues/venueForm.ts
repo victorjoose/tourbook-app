@@ -112,10 +112,10 @@ export const DEAL_TYPE_OPTIONS: ReadonlyArray<{ value: DealType; label: string }
   label: DEAL_TYPE_LABELS[d],
 }))
 
-/** Dom … Sáb (0 = domingo, same convention as venue.showDays). */
-export const SHOW_DAY_OPTIONS: ReadonlyArray<{ value: number; label: string }> = WEEKDAY_SHORT_PT.map((label, day) => ({
+/** Seg … Dom (Monday-first like the wizard chips; 0 = domingo as in venue.showDays). */
+export const SHOW_DAY_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [1, 2, 3, 4, 5, 6, 0].map((day) => ({
   value: day,
-  label,
+  label: WEEKDAY_SHORT_PT[day] ?? '',
 }))
 
 // ---------------------------------------------------------------------------

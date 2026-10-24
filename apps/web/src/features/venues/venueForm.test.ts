@@ -234,9 +234,9 @@ describe('display helpers', () => {
     expect(VENUE_FORM_FIELDS).toEqual(Object.keys(EMPTY_VENUE_FORM))
   })
   it('offers the seven weekdays from Dom to Sáb', () => {
-    expect(SHOW_DAY_OPTIONS.map((o) => o.value)).toEqual([0, 1, 2, 3, 4, 5, 6])
-    expect(SHOW_DAY_OPTIONS[0]?.label).toBe('Dom')
-    expect(SHOW_DAY_OPTIONS[6]?.label).toBe('Sáb')
+    expect(SHOW_DAY_OPTIONS.map((o) => o.value)).toEqual([1, 2, 3, 4, 5, 6, 0])
+    expect(SHOW_DAY_OPTIONS[0]?.label).toBe('Seg')
+    expect(SHOW_DAY_OPTIONS[6]?.label).toBe('Dom')
   })
   it('formats timestamps and gear', () => {
     expect(formatTimestampPt('2026-10-23T15:04:05.000Z')).toMatch(/^\d{2}\/\d{2}\/2026$/)
