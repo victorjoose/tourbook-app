@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 # Cancel runs still in progress for the same ref when a new one starts.
