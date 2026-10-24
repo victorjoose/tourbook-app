@@ -1,6 +1,11 @@
-import type { Band, City, TourDate, TourMember, Venue } from '@tour/core'
+import type { Band, City, Producer, TourDate, TourWithDates, Venue } from '@tour/core'
 import { describe, expect, it } from 'vitest'
+import { normalizeText, plural } from '../../../lib/text'
 import {
+  addChecklistItem,
+  alertInputs,
+  applyDatePatch,
+  asDealType,
   asTourDateStatus,
   buildGapSlots,
   canEditTour,
@@ -10,27 +15,41 @@ import {
   cityLabel,
   countConfirmed,
   datesWithoutCity,
+  editorPatchOf,
+  editorValuesOf,
   financeTotals,
   fromTimeInput,
   isIsoDate,
+  isTourOwner,
+  joinNamesPt,
+  legLabel,
   legsBetween,
-  normalizeText,
+  mergeDatePatch,
   parseBRL,
-  plural,
+  removeChecklistItem,
+  removeDate,
   resolveDates,
   routeSummary,
+  sameBounds,
   sameIdSet,
   searchByName,
   shareUrl,
   sortDates,
+  startCityFor,
   stopMarkers,
+  suggestConstraintsOf,
   suggestNextDate,
+  textOrNull,
   timesSummary,
   toTimeInput,
+  toggleChecklistItem,
+  tourEditorPatchOf,
+  tourEditorValuesOf,
   tourPeriodLabel,
   venuesOfCity,
+  withCity,
+  withVenue,
 } from './helpers'
-
 function city(partial: Partial<City> & Pick<City, 'id' | 'name'>): City {
   return { state: 'SC', slug: partial.id, lat: 0, lng: 0, population: null, ...partial }
 }
@@ -50,6 +69,25 @@ function venue(partial: Partial<Venue> & Pick<Venue, 'id' | 'cityId'>): Venue {
     hasPa: false,
     hasBackline: false,
     acceptsTouringBands: true,
+    contactName: null,
+    contactPhone: null,
+    contactEmail: null,
+    instagram: null,
+    website: null,
+    notes: null,
+    status: 'verified',
+    submittedBy: null,
+    ...partial,
+  }
+}
+
+function producer(partial: Partial<Producer> & Pick<Producer, 'id' | 'cityIds'>): Producer {
+  return {
+    name: partial.id,
+    slug: partial.id,
+    cityId: partial.cityIds[0] ?? null,
+    venueIds: [],
+    genres: [],
     contactName: null,
     contactPhone: null,
     contactEmail: null,
@@ -105,12 +143,39 @@ function tourDate(partial: Partial<TourDate> & Pick<TourDate, 'id' | 'date'>): T
   }
 }
 
+function tour(partial: Partial<TourWithDates> = {}): TourWithDates {
+  return {
+    id: 't1',
+    ownerId: 'owner',
+    bandId: null,
+    bandName: 'Banda',
+    name: 'Turnê Sul',
+    startCityId: null,
+    endCityId: null,
+    maxKmPerDay: 400,
+    allowOffDays: true,
+    genres: ['punk'],
+    capacityMin: null,
+    capacityMax: 300,
+    notes: null,
+    shareToken: null,
+    memberIds: ['owner'],
+    memberRoles: { owner: 'editor' },
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    dates: [],
+    members: [],
+    ...partial,
+  }
+}
+
 const joinville = city({ id: 'jve', name: 'Joinville', state: 'SC', lat: -26.3, lng: -48.85 })
 const curitiba = city({ id: 'cwb', name: 'Curitiba', state: 'PR', lat: -25.43, lng: -49.27 })
+const barX = venue({ id: 'v1', cityId: 'cwb', name: 'Bar X', lat: -25.44, lng: -49.28 })
 const index = {
   cities: new Map([joinville, curitiba].map((c) => [c.id, c])),
-  venues: new Map([venue({ id: 'v1', cityId: 'cwb', name: 'Bar X', lat: -25.44, lng: -49.28 })].map((v) => [v.id, v])),
-  producers: new Map(),
+  venues: new Map([barX].map((v) => [v.id, v])),
+  producers: new Map([producer({ id: 'p1', cityIds: ['cwb'] })].map((p) => [p.id, p])),
   bands: new Map([band({ id: 'b1', name: 'Banda Local', cityId: 'cwb' })].map((b) => [b.id, b])),
 }
 
@@ -129,12 +194,22 @@ describe('text helpers', () => {
     expect(shareUrl('https://app.test', 'abc')).toBe('https://app.test/t/abc')
     expect(shareUrl('https://app.test/', 'abc')).toBe('https://app.test/t/abc')
   })
+
+  it('trims text to null and joins names in pt-BR', () => {
+    expect(textOrNull('  ')).toBeNull()
+    expect(textOrNull(' oi ')).toBe('oi')
+    expect(textOrNull(null)).toBeNull()
+    expect(joinNamesPt([])).toBe('')
+    expect(joinNamesPt(['A'])).toBe('A')
+    expect(joinNamesPt(['A', 'B'])).toBe('A e B')
+    expect(joinNamesPt(['A', 'B', 'C'])).toBe('A, B e C')
+  })
 })
 
 describe('parseBRL', () => {
   it('parses pt-BR formatted money with and without the R$ prefix', () => {
     expect(parseBRL('R$ 1.500,00')).toEqual({ ok: true, cents: 150000 })
-    expect(parseBRL('R$ 1.500,00')).toEqual({ ok: true, cents: 150000 })
+    expect(parseBRL('R$ 1.500,00')).toEqual({ ok: true, cents: 150000 })
     expect(parseBRL('1.500,00')).toEqual({ ok: true, cents: 150000 })
     expect(parseBRL('1500,5')).toEqual({ ok: true, cents: 150050 })
     expect(parseBRL(',50')).toEqual({ ok: true, cents: 50 })
@@ -191,16 +266,30 @@ describe('finance', () => {
 })
 
 describe('checklist', () => {
+  const items = [
+    { label: 'a', done: true },
+    { label: 'b', done: false },
+    { label: 'c', done: true },
+    { label: 'd', done: false },
+  ]
+
   it('counts done items', () => {
-    const items = [
-      { label: 'a', done: true },
-      { label: 'b', done: false },
-      { label: 'c', done: true },
-      { label: 'd', done: false },
-    ]
     expect(checklistProgress(items)).toEqual({ done: 2, total: 4 })
     expect(checklistLabel(items)).toBe('2/4')
     expect(checklistLabel([])).toBe('0/0')
+  })
+
+  it('toggles, adds and removes without mutating the original', () => {
+    const toggled = toggleChecklistItem(items, 1)
+    expect(toggled[1]).toEqual({ label: 'b', done: true })
+    expect(items[1]?.done).toBe(false)
+
+    expect(addChecklistItem(items, '  Van alugada ')).toHaveLength(5)
+    expect(addChecklistItem(items, '  Van alugada ').at(-1)).toEqual({ label: 'Van alugada', done: false })
+    expect(addChecklistItem(items, '   ')).toEqual(items)
+
+    expect(removeChecklistItem(items, 0).map((i) => i.label)).toEqual(['b', 'c', 'd'])
+    expect(items).toHaveLength(4)
   })
 })
 
@@ -226,11 +315,13 @@ describe('dates', () => {
     expect(countConfirmed(dates)).toBe(2)
   })
 
-  it('validates ISO dates and statuses', () => {
+  it('validates ISO dates, statuses and deal types', () => {
     expect(isIsoDate('2026-03-06')).toBe(true)
     expect(isIsoDate('06/03/2026')).toBe(false)
     expect(asTourDateStatus('negociando')).toBe('negociando')
     expect(asTourDateStatus('whatever')).toBeNull()
+    expect(asDealType('porta')).toBe('porta')
+    expect(asDealType('x')).toBeNull()
   })
 
   it('converts times for inputs', () => {
@@ -272,6 +363,7 @@ describe('route', () => {
     expect(legs[0]?.km).toBeLessThan(200)
     expect(legs[0]?.hours).toBeGreaterThan(0)
     expect(legs[1]).toBeNull()
+    expect(legLabel({ km: 130, hours: 1.9 })).toBe('130 km · 1h54')
   })
 
   it('summarizes the route', () => {
@@ -288,6 +380,22 @@ describe('route', () => {
     expect(stops.map((s) => s.label)).toEqual(['1', '2'])
     expect(stops[1]).toMatchObject({ id: 'd2', lat: -25.44, lng: -49.28, title: '2. Bar X · Curitiba/PR' })
     expect(stops[0]?.title).toBe('1. Joinville/SC')
+  })
+
+  it('prepares the input for routeAlerts', () => {
+    expect(alertInputs(resolved)).toEqual([
+      { date: '2026-03-06', city: joinville },
+      { date: '2026-03-07', city: curitiba },
+      { date: '2026-03-08', city: null },
+    ])
+  })
+
+  it('compares bounds by value', () => {
+    const a = { minLat: 1, minLng: 2, maxLat: 3, maxLng: 4 }
+    expect(sameBounds(a, { ...a })).toBe(true)
+    expect(sameBounds(a, { ...a, maxLng: 5 })).toBe(false)
+    expect(sameBounds(a, null)).toBe(false)
+    expect(sameBounds(null, null)).toBe(true)
   })
 })
 
@@ -309,21 +417,40 @@ describe('gaps', () => {
   it('lists the dates without a city', () => {
     expect(datesWithoutCity(dates).map((d) => d.id)).toEqual(['b', 'c'])
   })
+
+  it('takes the constraints from the tour', () => {
+    expect(suggestConstraintsOf(tour({ maxKmPerDay: 300, genres: ['punk', 'hardcore'], capacityMin: 50, capacityMax: null }))).toEqual({
+      maxKmPerDay: 300,
+      genres: ['punk', 'hardcore'],
+      capacityMin: 50,
+      capacityMax: null,
+    })
+  })
+
+  it('falls back to the first date with a city as the start city', () => {
+    const resolved = resolveDates(dates, index)
+    expect(startCityFor(tour({ startCityId: 'cwb' }), index.cities, resolved)?.id).toBe('cwb')
+    expect(startCityFor(tour({ startCityId: 'missing' }), index.cities, resolved)?.id).toBe('jve')
+    expect(startCityFor(tour({ startCityId: null }), index.cities, [])).toBeNull()
+  })
 })
 
 describe('permissions', () => {
-  const members: TourMember[] = [
-    { tourId: 't1', profileId: 'editor', role: 'editor' },
-    { tourId: 't1', profileId: 'viewer', role: 'viewer' },
-  ]
-  const tour = { ownerId: 'owner', members }
+  const access = { ownerId: 'owner', memberRoles: { owner: 'editor', editor: 'editor', viewer: 'viewer' } as const }
 
   it('lets the owner and editors edit, not viewers or strangers', () => {
-    expect(canEditTour(tour, 'owner')).toBe(true)
-    expect(canEditTour(tour, 'editor')).toBe(true)
-    expect(canEditTour(tour, 'viewer')).toBe(false)
-    expect(canEditTour(tour, 'someone')).toBe(false)
-    expect(canEditTour(tour, null)).toBe(false)
+    expect(canEditTour(access, 'owner')).toBe(true)
+    expect(canEditTour(access, 'editor')).toBe(true)
+    expect(canEditTour(access, 'viewer')).toBe(false)
+    expect(canEditTour(access, 'someone')).toBe(false)
+    expect(canEditTour(access, null)).toBe(false)
+    expect(canEditTour(access, undefined)).toBe(false)
+  })
+
+  it('knows who owns the tour', () => {
+    expect(isTourOwner(access, 'owner')).toBe(true)
+    expect(isTourOwner(access, 'editor')).toBe(false)
+    expect(isTourOwner(access, undefined)).toBe(false)
   })
 })
 
@@ -344,5 +471,173 @@ describe('search', () => {
   it('compares id sets ignoring order', () => {
     expect(sameIdSet(['a', 'b'], ['b', 'a'])).toBe(true)
     expect(sameIdSet(['a'], ['a', 'b'])).toBe(false)
+  })
+})
+
+describe('optimistic cache updates', () => {
+  const base = tourDate({ id: 'd1', date: '2026-03-06', status: 'ideia', feeCents: 1000, checklist: [{ label: 'a', done: false }] })
+
+  it('merges a patch converting status and deal type', () => {
+    const merged = mergeDatePatch(base, { status: 'confirmado', dealType: 'porta', feeCents: null, lodging: 'Casa do Zé' })
+    expect(merged.status).toBe('confirmado')
+    expect(merged.dealType).toBe('porta')
+    expect(merged.feeCents).toBeNull()
+    expect(merged.lodging).toBe('Casa do Zé')
+    expect(merged.checklist).toEqual(base.checklist)
+    // Unknown values keep the current status; an invalid deal type becomes null.
+    expect(mergeDatePatch(base, { status: 'nope' }).status).toBe('ideia')
+    expect(mergeDatePatch(base, { dealType: 'nope' }).dealType).toBeNull()
+  })
+
+  it('copies checklist and bands from the patch', () => {
+    const merged = mergeDatePatch(base, { checklist: [{ label: 'x', done: true }], bands: [{ bandId: 'b1', role: 'convidada' }] })
+    expect(merged.checklist).toEqual([{ label: 'x', done: true }])
+    expect(merged.bands).toEqual([{ bandId: 'b1', role: 'convidada' }])
+  })
+
+  it('patches only the matching date in the tour and keeps other identities', () => {
+    const other = tourDate({ id: 'd2', date: '2026-03-07' })
+    const t = tour({ dates: [base, other] })
+    const next = applyDatePatch(t, 'd1', { status: 'negociando' })
+    expect(next.dates[0]?.status).toBe('negociando')
+    expect(next.dates[1]).toBe(other)
+    expect(t.dates[0]?.status).toBe('ideia')
+    expect(removeDate(t, 'd1').dates.map((d) => d.id)).toEqual(['d2'])
+  })
+})
+
+describe('date editor', () => {
+  const date = tourDate({
+    id: 'd1',
+    date: '2026-03-06',
+    cityId: 'cwb',
+    venueId: 'v1',
+    producerId: 'p1',
+    status: 'negociando',
+    isFixed: true,
+    loadInTime: '16:00:00',
+    setTime: '22:00',
+    dealType: 'misto',
+    feeCents: 150000,
+    costCents: 2550,
+    lodging: 'Hostel',
+    notes: 'Levar merch',
+    checklist: [{ label: 'Contrato', done: true }],
+    bands: [{ bandId: 'b1', role: 'convidada' }],
+  })
+
+  it('builds form values from a date', () => {
+    const values = editorValuesOf(date)
+    expect(values).toMatchObject({
+      date: '2026-03-06',
+      cityId: 'cwb',
+      venueId: 'v1',
+      producerId: 'p1',
+      status: 'negociando',
+      isFixed: true,
+      loadInTime: '16:00',
+      soundcheckTime: '',
+      setTime: '22:00',
+      dealType: 'misto',
+      fee: '1.500,00',
+      cost: '25,50',
+      lodging: 'Hostel',
+      notes: 'Levar merch',
+      bandIds: ['b1'],
+    })
+    expect(values.checklist).toEqual(date.checklist)
+    expect(values.checklist).not.toBe(date.checklist)
+  })
+
+  it('round-trips into a single patch with checklist and bands', () => {
+    const result = editorPatchOf({ ...editorValuesOf(date), bandIds: ['b1', 'b2', 'b1'], fee: 'R$ 2.000,00', notes: '  ' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.patch).toEqual({
+      date: '2026-03-06',
+      cityId: 'cwb',
+      venueId: 'v1',
+      producerId: 'p1',
+      status: 'negociando',
+      isFixed: true,
+      loadInTime: '16:00',
+      soundcheckTime: null,
+      doorsTime: null,
+      setTime: '22:00',
+      dealType: 'misto',
+      feeCents: 200000,
+      costCents: 2550,
+      lodging: 'Hostel',
+      notes: null,
+      checklist: [{ label: 'Contrato', done: true }],
+      bands: [
+        { bandId: 'b1', role: 'convidada' },
+        { bandId: 'b2', role: 'convidada' },
+      ],
+    })
+  })
+
+  it('clears venue and producer when there is no city and drops empty checklist labels', () => {
+    const result = editorPatchOf({
+      ...editorValuesOf(date),
+      cityId: null,
+      dealType: '',
+      fee: '',
+      checklist: [
+        { label: '  ', done: false },
+        { label: ' Rider ', done: true },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.patch.venueId).toBeNull()
+    expect(result.patch.producerId).toBeNull()
+    expect(result.patch.dealType).toBeNull()
+    expect(result.patch.feeCents).toBeNull()
+    expect(result.patch.checklist).toEqual([{ label: 'Rider', done: true }])
+  })
+
+  it('reports validation errors per field', () => {
+    const result = editorPatchOf({ ...editorValuesOf(date), date: '06/03/2026', fee: 'abc', cost: '1,234' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.errors.date).toBeTruthy()
+    expect(result.errors.fee).toBeTruthy()
+    expect(result.errors.cost).toBeTruthy()
+  })
+
+  it('keeps venue and producer only when they belong to the new city', () => {
+    const values = editorValuesOf(date)
+    const lookups = { venues: index.venues, producers: index.producers }
+    expect(withCity(values, 'cwb', lookups)).toMatchObject({ cityId: 'cwb', venueId: 'v1', producerId: 'p1' })
+    expect(withCity(values, 'jve', lookups)).toMatchObject({ cityId: 'jve', venueId: null, producerId: null })
+    expect(withCity(values, null, lookups)).toMatchObject({ cityId: null, venueId: null, producerId: null })
+  })
+
+  it('picking a venue also sets its city', () => {
+    const values = { ...editorValuesOf(date), cityId: null, venueId: null }
+    expect(withVenue(values, barX)).toMatchObject({ cityId: 'cwb', venueId: 'v1' })
+    expect(withVenue(values, null)).toMatchObject({ cityId: null, venueId: null })
+  })
+})
+
+describe('tour editor', () => {
+  it('builds values and validates like the tour schema', () => {
+    const values = tourEditorValuesOf(tour({ name: 'Sul 2026', bandName: 'Storm', maxKmPerDay: 350 }))
+    expect(values).toEqual({ name: 'Sul 2026', bandName: 'Storm', maxKmPerDay: '350' })
+    expect(tourEditorPatchOf({ name: ' Sul 2026 ', bandName: ' Storm ', maxKmPerDay: ' 350 ' })).toEqual({
+      ok: true,
+      patch: { name: 'Sul 2026', bandName: 'Storm', maxKmPerDay: 350 },
+    })
+  })
+
+  it('rejects short names, empty band and km outside the limits', () => {
+    const result = tourEditorPatchOf({ name: 'A', bandName: '', maxKmPerDay: '20' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.errors).toEqual({ name: 'Dê um nome à turnê', bandName: 'Informe a banda', maxKmPerDay: 'Mínimo 50 km' })
+    expect(tourEditorPatchOf({ name: 'Ok', bandName: 'B', maxKmPerDay: '2000' }).ok).toBe(false)
+    expect(tourEditorPatchOf({ name: 'Ok', bandName: 'B', maxKmPerDay: '12.5' }).ok).toBe(false)
+    expect(tourEditorPatchOf({ name: 'Ok', bandName: 'B', maxKmPerDay: '' }).ok).toBe(false)
   })
 })

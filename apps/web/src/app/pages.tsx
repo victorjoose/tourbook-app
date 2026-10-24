@@ -13,6 +13,7 @@ export const SubmitVenuePage = lazy(() => import('../features/venues/SubmitVenue
 export const ModerationPage = lazy(() => import('../features/venues/ModerationPage'))
 export const ProfilePage = lazy(() => import('../features/profile/ProfilePage'))
 export const ImportSeedPage = lazy(() => import('../features/admin/ImportSeedPage'))
+export const NotFoundPage = lazy(() => import('./NotFoundPage'))
 
 export function LazyOutlet() {
   return (

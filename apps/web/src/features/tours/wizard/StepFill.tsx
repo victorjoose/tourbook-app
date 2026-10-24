@@ -7,7 +7,7 @@ import { useRegionIndex } from '../../../hooks/useRegionData'
 import { useTourWizardStore } from '../tourWizardStore'
 import { SlotCard } from './SlotCard'
 import { filledCount, routeStops, toGapSlots } from './slots'
-import { plural } from './text'
+import { plural } from '../../../lib/text'
 import { effectiveEndCityId, stepIssues } from './validation'
 
 export function StepFill({ data, showErrors, onGoToStep }: { data: RegionData; showErrors: boolean; onGoToStep: (step: number) => void }) {

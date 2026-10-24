@@ -11,20 +11,12 @@ import {
   type RegionData,
   type Venue,
 } from '@tour/core'
+import { normalizeText, plural } from '../../lib/text'
 
 export type CityIndex = ReadonlyMap<string, City>
 
 export function indexCities(cities: readonly City[]): CityIndex {
   return new Map(cities.map((c) => [c.id, c]))
-}
-
-/** Lowercase, trimmed, without diacritics ("São José" → "sao jose"). */
-export function normalizeText(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim()
 }
 
 function comparePopulationDesc(a: City, b: City): number {
@@ -149,10 +141,6 @@ export function citySummary(cityId: string, data: Pick<RegionData, 'venues' | 'p
     producers: data.producers.filter((p) => p.cityIds.includes(cityId)).length,
     bands: data.bands.filter((b) => b.cityId === cityId).length,
   }
-}
-
-export function plural(n: number, singular: string, pluralForm: string): string {
-  return `${n} ${n === 1 ? singular : pluralForm}`
 }
 
 /** "Curitiba/PR · 4 casas · 2 produtoras · 5 bandas" */

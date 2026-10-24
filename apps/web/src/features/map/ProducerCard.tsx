@@ -3,8 +3,8 @@ import { Mic, Store } from 'lucide-react'
 import { Link } from 'react-router'
 import { cn } from '../../lib/cn'
 import { GenreBadges } from './GenreBadges'
-import { type CityIndex, plural } from './filtering'
-
+import { plural } from '../../lib/text'
+import { type CityIndex } from './filtering'
 export type ProducerCardProps = {
   producer: Producer
   cities: CityIndex

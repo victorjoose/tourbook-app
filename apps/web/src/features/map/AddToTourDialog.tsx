@@ -23,9 +23,9 @@ import { Input } from '../../components/ui/Input'
 import { Spinner } from '../../components/ui/Spinner'
 import { useRegionData, useRegionIndex } from '../../hooks/useRegionData'
 import { cn } from '../../lib/cn'
+import { errorMessage } from '../../lib/errorMessage'
 import { client } from '../../lib/firebase'
-import { plural } from './filtering'
-
+import { plural } from '../../lib/text'
 export type AddToTourDialogProps = {
   venue: Venue
   open: boolean
@@ -37,10 +37,6 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const NO_DATES: TourDate[] = []
 
 type SaveInput = { tourId: string; dateId: string | null; date: string }
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : 'Não foi possível salvar. Tente de novo.'
-}
 
 /** Pick one of my tours, then an existing date (or a new one) to put this venue in. */
 export function AddToTourDialog({ venue, open, onClose }: AddToTourDialogProps) {

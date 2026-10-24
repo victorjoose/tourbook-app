@@ -54,7 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const profileQuery = useQuery({
     queryKey: queryKeys.profile(user?.id ?? 'anon'),
-    queryFn: () => ensureProfile(client, { uid: user!.id, displayName: user!.displayName, photoURL: user!.avatarUrl }),
+    queryFn: () => {
+      if (!user) throw new Error('Sem usuário logado.')
+      return ensureProfile(client, { uid: user.id, displayName: user.displayName, photoURL: user.avatarUrl })
+    },
     enabled: !!user,
     staleTime: 5 * 60_000,
   })

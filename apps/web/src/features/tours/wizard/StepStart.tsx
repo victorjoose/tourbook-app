@@ -4,7 +4,7 @@ import { Checkbox } from '../../../components/ui/Input'
 import { useRegionIndex } from '../../../hooks/useRegionData'
 import { MapView, type MapStop } from '../../map/MapView'
 import { useTourWizardStore } from '../tourWizardStore'
-import { SearchSelect } from './SearchSelect'
+import { SearchSelect } from '../../../components/ui/SearchSelect'
 import { effectiveEndCityId, tourFormErrors } from './validation'
 
 export function StepStart({ data, showErrors }: { data: RegionData; showErrors: boolean }) {

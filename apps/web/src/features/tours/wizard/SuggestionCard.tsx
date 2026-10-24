@@ -5,8 +5,7 @@ import { Button } from '../../../components/ui/Button'
 import { Checkbox } from '../../../components/ui/Input'
 import { cn } from '../../../lib/cn'
 import type { SlotPick } from '../tourWizardStore'
-import { plural } from './text'
-
+import { plural } from '../../../lib/text'
 export function SuggestionCard({ suggestion, onChoose }: { suggestion: CitySuggestion; onChoose: (pick: SlotPick) => void }) {
   const [expanded, setExpanded] = useState(false)
   const [venueId, setVenueId] = useState<string | null>(null)

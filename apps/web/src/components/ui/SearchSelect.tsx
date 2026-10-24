@@ -1,13 +1,13 @@
 import { ChevronDown, Search, X } from 'lucide-react'
-import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { Field } from '../../../components/ui/Input'
-import { cn } from '../../../lib/cn'
-import { normalizeText } from './text'
+import { useId, useMemo, useState, type KeyboardEvent } from 'react'
+import { cn } from '../../lib/cn'
+import { normalizeText } from '../../lib/text'
+import { Field } from './Input'
 
 export type SearchOption = { id: string; label: string; sublabel?: string }
 
-type SearchSelectProps = {
-  options: SearchOption[]
+export type SearchSelectProps = {
+  options: readonly SearchOption[]
   value: string | null
   onChange: (id: string | null) => void
   label?: string
@@ -37,7 +37,6 @@ export function SearchSelect({
 }: SearchSelectProps) {
   const id = useId()
   const listId = `${id}-list`
-  const inputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -52,7 +51,8 @@ export function SearchSelect({
     return list.slice(0, limit)
   }, [options, query, limit])
 
-  const inputValue = open ? query : selected ? selected.label : ''
+  const safeActive = filtered.length === 0 ? 0 : Math.min(active, filtered.length - 1)
+  const inputValue = open ? query : (selected?.label ?? '')
 
   function openList() {
     if (disabled) return
@@ -76,13 +76,13 @@ export function SearchSelect({
     if (!open) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActive((i) => Math.min(filtered.length - 1, i + 1))
+      setActive(Math.min(filtered.length - 1, safeActive + 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setActive((i) => Math.max(0, i - 1))
+      setActive(Math.max(0, safeActive - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const option = filtered[active]
+      const option = filtered[safeActive]
       if (option) choose(option)
     } else if (e.key === 'Escape') {
       e.preventDefault()
@@ -101,7 +101,6 @@ export function SearchSelect({
       >
         <Search className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
         <input
-          ref={inputRef}
           id={id}
           role="combobox"
           aria-expanded={open}
@@ -129,7 +128,7 @@ export function SearchSelect({
             onClick={() => onChange(null)}
             className="rounded-md p-0.5 text-ink-muted hover:bg-surface-2 hover:text-ink"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden />
           </button>
         ) : (
           <ChevronDown className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
@@ -152,7 +151,7 @@ export function SearchSelect({
               onClick={() => choose(option)}
               className={cn(
                 'flex cursor-pointer items-baseline justify-between gap-2 px-3 py-2 text-sm',
-                i === active ? 'bg-surface-2 text-ink' : 'text-ink',
+                i === safeActive ? 'bg-surface-2 text-ink' : 'text-ink',
                 option.id === value && 'font-medium',
               )}
             >

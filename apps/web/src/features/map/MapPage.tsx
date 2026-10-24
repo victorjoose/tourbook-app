@@ -23,7 +23,7 @@ import {
   type CityIndex,
 } from './filtering'
 import { useMapStore } from './mapStore'
-import { useIsDesktop } from './useIsDesktop'
+import { useIsDesktop } from '../../hooks/useIsDesktop'
 
 type DetailKind = 'venue' | 'producer' | 'band'
 type Detail = { kind: DetailKind; id: string }

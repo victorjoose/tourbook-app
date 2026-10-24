@@ -12,7 +12,8 @@ import {
   slotsToTourDates,
   uniqueSortedDates,
 } from './slots'
-import { capitalize, cityLabel, normalizeText } from './text'
+import { capitalize, normalizeText } from '../../../lib/text'
+import { cityLabel } from './text'
 import { effectiveEndCityId, stepIssues, toTourFormInput, tourFormErrors } from './validation'
 import type { TourFields, WizardSlot, WizardState } from './types'
 

@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { useId } from 'react'
 import { cn } from '../../lib/cn'
 
@@ -35,7 +35,7 @@ export function Field({
   )
 }
 
-export type InputProps = InputHTMLAttributes<HTMLInputElement> & { label?: string; hint?: string; error?: string | null }
+export type InputProps = ComponentProps<'input'> & { label?: string; hint?: string; error?: string | null }
 
 export function Input({ label, hint, error, className, id, ...props }: InputProps) {
   const autoId = useId()
@@ -56,7 +56,7 @@ export function Input({ label, hint, error, className, id, ...props }: InputProp
   )
 }
 
-export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
+export type TextareaProps = ComponentProps<'textarea'> & {
   label?: string
   hint?: string
   error?: string | null
@@ -81,7 +81,7 @@ export function Textarea({ label, hint, error, className, id, ...props }: Textar
   )
 }
 
-export type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
+export type SelectProps = ComponentProps<'select'> & {
   label?: string
   hint?: string
   error?: string | null
@@ -107,7 +107,7 @@ export function Checkbox({
   label,
   className,
   ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode }) {
+}: ComponentProps<'input'> & { label: ReactNode }) {
   return (
     <label className={cn('inline-flex cursor-pointer items-center gap-2 text-sm', className)}>
       <input type="checkbox" className="h-4 w-4 rounded border-surface-3 bg-surface-1 accent-brand-500" {...props} />

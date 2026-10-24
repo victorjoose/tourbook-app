@@ -425,6 +425,8 @@ export async function deleteTour(client: Client, tourId: string): Promise<void> 
     const tourSnap = await getDoc(tourRef)
     if (!tourSnap.exists()) return
     const tour = docToTour(tourSnap.id, tourSnap.data())
+    // Só o dono apaga (regra do Firestore). Checar antes evita apagar datas e cópia pública e falhar só no fim.
+    if (tour.ownerId !== currentUid(client)) throw new DataError('Erro ao excluir turnê', { code: 'permission-denied' })
     if (tour.shareToken) await deleteDoc(ref(client.db, COLLECTIONS.publicTourbooks, tour.shareToken))
     const dates = await getDocs(datesCol(client.db, tourId))
     for (const part of chunk(dates.docs, 400)) {
@@ -592,11 +594,12 @@ export async function buildPublicTourbookPayload(client: Client, tour: TourWithD
 /** Regrava `publicTourbooks/{token}` se a turnê tiver link ativo. Silencioso quando não tem. */
 export async function syncPublicTourbook(client: Client, tourId: string): Promise<void> {
   const tour = await fetchTour(client, tourId)
-  if (!tour?.shareToken) return
+  const token = tour?.shareToken
+  if (!tour || !token) return
   await run('Erro ao atualizar tourbook público', async () => {
     const payload = await buildPublicTourbookPayload(client, tour)
     const data: PublicTourbookDoc<PublicTourbookPayload> = { tourId, payload, updatedAt: nowIso() }
-    await setDoc(ref(client.db, COLLECTIONS.publicTourbooks, tour.shareToken!), data)
+    await setDoc(ref(client.db, COLLECTIONS.publicTourbooks, token), data)
   })
 }
 

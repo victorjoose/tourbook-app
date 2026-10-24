@@ -1,5 +1,6 @@
 import { EMPTY_FILTERS, type Band, type Bounds, type City, type Producer, type Venue } from '@tour/core'
 import { describe, expect, it } from 'vitest'
+import { normalizeText } from '../../lib/text'
 import {
   CAPACITY_PRESETS,
   activeCapacityPreset,
@@ -12,7 +13,6 @@ import {
   instagramHandle,
   instagramUrl,
   matchesFilters,
-  normalizeText,
   producersInView,
   searchCities,
   showDaysLabel,
@@ -22,7 +22,6 @@ import {
   websiteLabel,
   websiteUrl,
 } from './filtering'
-
 function city(partial: Partial<City> & Pick<City, 'id' | 'name'>): City {
   return { state: 'PR', slug: partial.id, lat: 0, lng: 0, population: null, ...partial }
 }

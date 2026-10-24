@@ -4,7 +4,7 @@ import { useId } from 'react'
 import { Chip } from '../../../components/ui/Chip'
 import { Field, Input } from '../../../components/ui/Input'
 import { useTourWizardStore } from '../tourWizardStore'
-import { normalizeText } from './text'
+import { normalizeText } from '../../../lib/text'
 import { tourFormErrors } from './validation'
 
 export function StepBand({ data, showErrors }: { data: RegionData; showErrors: boolean }) {

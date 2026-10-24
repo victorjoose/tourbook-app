@@ -10,6 +10,7 @@
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
+    "typecheck:tools": "pnpm --filter web exec tsc -p ../../firebase/tsconfig.json && pnpm --filter web exec tsc -p ../../scripts/tsconfig.json",
     "emulators": "firebase emulators:start --only auth,firestore",
     "rules:test": "firebase emulators:exec --only firestore --project demo-tourbook \"vitest run --root firebase\"",
     "rules:deploy": "firebase deploy --only firestore:rules,firestore:indexes",

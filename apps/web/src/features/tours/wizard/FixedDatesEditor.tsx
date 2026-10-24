@@ -5,7 +5,7 @@ import { Button } from '../../../components/ui/Button'
 import { Input, Select } from '../../../components/ui/Input'
 import { useRegionIndex } from '../../../hooks/useRegionData'
 import { useTourWizardStore } from '../tourWizardStore'
-import { SearchSelect } from './SearchSelect'
+import { SearchSelect } from '../../../components/ui/SearchSelect'
 import { isIsoDate, venuesOfCity } from './slots'
 import { cityLabel } from './text'
 

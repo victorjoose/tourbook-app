@@ -6,8 +6,9 @@ dist
 *.tsbuildinfo
 .DS_Store
 .vercel
-supabase/.temp
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
 .firebase
+# chave da conta de serviço usada por `pnpm seed` (nunca versionar)
+service-account*.json

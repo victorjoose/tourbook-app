@@ -7,10 +7,10 @@ import { Badge, Chip } from '../../../components/ui/Chip'
 import { Select } from '../../../components/ui/Input'
 import { cn } from '../../../lib/cn'
 import type { SlotPick } from '../tourWizardStore'
-import { SearchSelect, type SearchOption } from './SearchSelect'
+import { SearchSelect, type SearchOption } from '../../../components/ui/SearchSelect'
 import { bandsOfCity, venuesOfCity } from './slots'
 import { SuggestionCard } from './SuggestionCard'
-import { capitalize } from './text'
+import { capitalize } from '../../../lib/text'
 import type { WizardSlot } from './types'
 
 export type SlotCardProps = {

@@ -8,6 +8,11 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  build: {
+    // maplibre-gl (~1.1 MB) and @react-pdf/renderer (~1.2 MB) already land in lazy chunks
+    // loaded only by the map and by the PDF viewer/download.
+    chunkSizeWarningLimit: 1300,
+  },
   test: {
     environment: 'jsdom',
     globals: true,

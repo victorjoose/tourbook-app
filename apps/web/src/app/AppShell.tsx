@@ -1,4 +1,4 @@
-import { CalendarRange, Map as MapIcon, ShieldCheck, UserRound } from 'lucide-react'
+import { CalendarRange, Database, Map as MapIcon, ShieldCheck, UserRound } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { useAuth } from '../auth/AuthProvider'
 import { cn } from '../lib/cn'
@@ -9,6 +9,11 @@ const items = [
   { to: '/perfil', label: 'Perfil', icon: UserRound, match: (p: string) => p.startsWith('/perfil') },
 ]
 
+const adminItems = [
+  { to: '/admin/moderacao', label: 'Moderação', icon: ShieldCheck, match: (p: string) => p.startsWith('/admin/moderacao') },
+  { to: '/admin/importar', label: 'Importar', icon: Database, match: (p: string) => p.startsWith('/admin/importar') },
+]
+
 /**
  * Layout do app: barra no topo no desktop, barra inferior no celular.
  * O conteúdo ocupa o resto da altura (o mapa precisa de altura fixa).
@@ -16,9 +21,7 @@ const items = [
 export function AppShell() {
   const { pathname } = useLocation()
   const { isAdmin } = useAuth()
-  const nav = isAdmin
-    ? [...items, { to: '/admin/moderacao', label: 'Moderação', icon: ShieldCheck, match: (p: string) => p.startsWith('/admin') }]
-    : items
+  const nav = isAdmin ? [...items, ...adminItems] : items
 
   return (
     <div className="flex h-full flex-col">

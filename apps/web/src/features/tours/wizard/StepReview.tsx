@@ -18,7 +18,8 @@ import { useRegionIndex } from '../../../hooks/useRegionData'
 import { MapView, type MapStop } from '../../map/MapView'
 import { useTourWizardStore } from '../tourWizardStore'
 import { buildLegs, filledCount, routeStops } from './slots'
-import { cityLabel, plural } from './text'
+import { plural } from '../../../lib/text'
+import { cityLabel } from './text'
 import { effectiveEndCityId } from './validation'
 
 export function StepReview({ data }: { data: RegionData }) {
