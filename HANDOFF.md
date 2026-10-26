@@ -3,7 +3,7 @@
 Documento de passagem de bastão para quem continuar (pessoa ou Claude). Leia junto com `SPEC.md` (especificação técnica), `README.md` (setup) e `firebase/README.md` (regras, emulador, admin).
 
 ## Onde está o código
-- Repo: https://github.com/victorjoose/tourbook-app — branch `feat/mvp`, PR rascunho #1 (CI verde no último commit).
+- Repo: https://github.com/victorjoose/tourbook-app — o MVP foi mergeado em `main` em 2026-10-26 (PR #1, merge commit 5314e2a). Trabalho novo sai de `main`; `feat/mvp` pode ser apagada.
 - Monorepo pnpm: `apps/web` (Vite + React 19 + TS + Tailwind v4), `packages/core` (`@tour/core`, sem DOM — tipos, queries Firestore, motor de sugestões, geo, datas, tourbook, seed em `@tour/core/seed`), `firebase/` (regras + 103 testes no emulador), `scripts/seed.ts`.
 - Documento de produto (decisões do José): https://claude.ai/artifact/HRcy9jRbhqKiTtiSQA9Fvk
 
@@ -17,13 +17,19 @@ Documento de passagem de bastão para quem continuar (pessoa ou Claude). Leia ju
 - Mapa (busca, filtros, listas, detalhes, adicionar a uma turnê), criador de turnê (wizard), página da turnê (datas, status, editor, preencher buracos, finanças, alertas, link público), tourbook PDF + página pública `/t/:token`, sugestão de casas + moderação, perfil, `/admin/importar` (dados de exemplo: 92 cidades reais, 45 casas/12 produtoras/20 bandas fictícias).
 - `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r test` (187 testes), `pnpm typecheck:tools`, build web e `pnpm rules:test` (emulador, Java 21) todos verdes em 2026-10-24.
 
+## Infra já configurada (2026-10-26)
+- **Firestore:** regras de `firebase/firestore.rules` publicadas (versão ativa idêntica ao repo).
+- **Admin:** o perfil do José (`profiles/OGGq2K4xJfR8LzzYy8P6yR6OSrB2`) tem `role = 'admin'`.
+- **Vercel:** projeto `tourbook-app` na conta pessoal do José (Hobby), importado de `main` com Root Directory `apps/web` e preset Vite. Domínio de produção: https://tourbook-app-delta.vercel.app (`tourbook-app.vercel.app` já estava em uso). Variáveis cadastradas (Production e Preview): `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_MAP_STYLE_URL`. **Falta `VITE_FIREBASE_API_KEY`**, que o José adiciona em Settings → Environment Variables (o Claude não digita chaves de API em formulários); depois é preciso um redeploy.
+- **Auth:** `tourbook-app-delta.vercel.app` adicionado em Authentication → Settings → Authorized domains (além de `localhost` e dos domínios padrão). Previews da Vercel usam outros domínios e precisariam ser adicionados um a um.
+
 ## O que falta para o José testar de verdade (ordem sugerida)
-1. ~~Publicar as regras~~ **Feito em 2026-10-26**: o José clicou em Publish no console e o Claude conferiu que a versão ativa é idêntica a `firebase/firestore.rules` (mesmo tamanho e hash). Para mudanças futuras nas regras: colar no console de novo ou `npx firebase login` + `pnpm rules:deploy`. Authentication → Authorized domains já tem `localhost` e os domínios padrão do Firebase.
-2. Criar `apps/web/.env` com a config web do app "Tour App Web" (console → Configurações do projeto → Seus apps). Chaves em `apps/web/.env.example`. O Claude mandou o arquivo pronto na thread em 2026-10-26 (cópia em `/mnt/project-files/tour-app/apps-web.env`, só renomear para `apps/web/.env`). A config **não** é versionada nem vai para a memória (é pública por natureza, mas evitamos espalhar).
-3. `pnpm install && pnpm dev` → entrar com Google → no console, `profiles/<uid>.role = 'admin'` → abrir `/admin/importar` e importar os dados de exemplo.
+1. ~~Publicar as regras~~ Feito (ver acima).
+2. ~~Criar `apps/web/.env`~~ Feito: o José já roda o app local e entrou com Google. O arquivo pronto está em `/mnt/project-files/tour-app/apps-web.env` (não versionar).
+3. ~~Virar admin~~ Feito. Falta abrir `/admin/importar` e importar os dados de exemplo.
 4. Criar uma turnê, gerar o link público, baixar o PDF. Reportar bugs.
-5. Deploy na Vercel (Root Directory `apps/web`, env `VITE_FIREBASE_*` + `VITE_MAP_STYLE_URL`) e adicionar o domínio da Vercel em Authentication → Settings → Authorized domains.
-6. Marcar o PR #1 como pronto e fazer merge em `main` quando o José aprovar.
+5. Vercel: adicionar `VITE_FIREBASE_API_KEY` e fazer redeploy (ver "Infra já configurada"). Depois testar o login em https://tourbook-app-delta.vercel.app.
+6. ~~Mergear o PR #1~~ Feito em 2026-10-26.
 
 ## Revisão adversarial (concluída em 2026-10-24)
 Quatro revisores (segurança, correção, UX, qualidade) levantaram 29 achados; 26 foram confirmados por verificação independente. Os principais já foram corrigidos e estão em `feat/mvp`:
