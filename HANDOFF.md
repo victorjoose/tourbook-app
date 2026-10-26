@@ -1,4 +1,4 @@
-# Handoff — Tour App (estado em 2026-10-24, ~03:30 UTC)
+# Handoff — Tour App (estado em 2026-10-26)
 
 Documento de passagem de bastão para quem continuar (pessoa ou Claude). Leia junto com `SPEC.md` (especificação técnica), `README.md` (setup) e `firebase/README.md` (regras, emulador, admin).
 
@@ -18,7 +18,7 @@ Documento de passagem de bastão para quem continuar (pessoa ou Claude). Leia ju
 - `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r test` (187 testes), `pnpm typecheck:tools`, build web e `pnpm rules:test` (emulador, Java 21) todos verdes em 2026-10-24.
 
 ## O que falta para o José testar de verdade (ordem sugerida)
-1. **Publicar as regras** no projeto Firebase: console → Firestore → Regras → colar `firebase/firestore.rules` (ou `npx firebase login` + `pnpm rules:deploy`). Sem isso o banco em modo produção nega tudo.
+1. **Publicar as regras** no projeto Firebase. Em 2026-10-26 o Claude colou `firebase/firestore.rules` no editor do console (Firestore → Regras) numa aba do Chrome do José; o editor mostra "unpublished changes" e falta só clicar **Publish** — o Claude não tem permissão para publicar mudanças em produção. Se a aba foi fechada ou recarregada o rascunho se perde: colar de novo o arquivo inteiro, ou `npx firebase login` + `pnpm rules:deploy`. Sem isso o banco em modo produção nega tudo. Conferido: Authentication → Settings → Authorized domains já tem `localhost` (padrão), `tourbook-app.firebaseapp.com` e `tourbook-app.web.app`.
 2. Criar `apps/web/.env` com a config web do app "Tour App Web" (console → Configurações do projeto → Seus apps). Chaves em `apps/web/.env.example`. A config já está preenchida no ambiente do Claude desta sessão, mas **não** está versionada nem em memória (é pública por natureza, mas evitamos espalhar).
 3. `pnpm install && pnpm dev` → entrar com Google → no console, `profiles/<uid>.role = 'admin'` → abrir `/admin/importar` e importar os dados de exemplo.
 4. Criar uma turnê, gerar o link público, baixar o PDF. Reportar bugs.
