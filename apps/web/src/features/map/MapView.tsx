@@ -1,11 +1,26 @@
 import type { Bounds, LatLng, Venue } from '@tour/core'
-import { GeolocateControl, Map as MLMap, Marker, NavigationControl, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
+import {
+  GeolocateControl,
+  Map as MLMap,
+  Marker,
+  NavigationControl,
+  setWorkerUrl,
+  type GeoJSONSource,
+  type MapMouseEvent,
+} from 'maplibre-gl'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import type { FeatureCollection, Point } from 'geojson'
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
 import { env } from '../../lib/env'
 import { cn } from '../../lib/cn'
 
 import { PILOT_CENTER, PILOT_ZOOM } from './mapDefaults'
+
+// O MapLibre monta a URL do worker com `new URL(..., import.meta.url)` dentro de uma
+// função, e o Vite não enxerga isso no build: em produção o worker virava 404 e nada
+// vetorial (ruas, água, pins, rota) aparecia — só o relevo raster. `?worker&url` faz o
+// Vite empacotar o worker como arquivo próprio e devolver a URL certa.
+setWorkerUrl(maplibreWorkerUrl)
 
 export type MapStop = {
   id: string
