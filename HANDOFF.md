@@ -20,7 +20,7 @@ Documento de passagem de bastão para quem continuar (pessoa ou Claude). Leia ju
 ## Infra já configurada (2026-10-26)
 - **Firestore:** regras de `firebase/firestore.rules` publicadas (versão ativa idêntica ao repo).
 - **Admin:** o perfil do José (`profiles/OGGq2K4xJfR8LzzYy8P6yR6OSrB2`) tem `role = 'admin'`.
-- **Vercel:** projeto `tourbook-app` na conta pessoal do José (Hobby), importado de `main` com Root Directory `apps/web` e preset Vite. Domínio de produção: https://tourbook-app-delta.vercel.app (`tourbook-app.vercel.app` já estava em uso). Variáveis cadastradas (Production e Preview): `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_MAP_STYLE_URL`. **Falta `VITE_FIREBASE_API_KEY`**, que o José adiciona em Settings → Environment Variables (o Claude não digita chaves de API em formulários); depois é preciso um redeploy.
+- **Vercel:** projeto `tourbook-app` na conta pessoal do José (Hobby), importado de `main` com Root Directory `apps/web` e preset Vite. Domínio de produção: https://tourbook-app-delta.vercel.app (`tourbook-app.vercel.app` já estava em uso). Variáveis cadastradas (Production e Preview): `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_MAP_STYLE_URL` e `VITE_FIREBASE_API_KEY` (esta última adicionada pelo José, porque o Claude não digita chaves de API em formulários). Redeploy feito em 2026-10-26 e a tela de login abre em produção.
 - **Auth:** `tourbook-app-delta.vercel.app` adicionado em Authentication → Settings → Authorized domains (além de `localhost` e dos domínios padrão). Previews da Vercel usam outros domínios e precisariam ser adicionados um a um.
 
 ## O que falta para o José testar de verdade (ordem sugerida)
@@ -28,7 +28,7 @@ Documento de passagem de bastão para quem continuar (pessoa ou Claude). Leia ju
 2. ~~Criar `apps/web/.env`~~ Feito: o José já roda o app local e entrou com Google. O arquivo pronto está em `/mnt/project-files/tour-app/apps-web.env` (não versionar).
 3. ~~Virar admin~~ Feito. Falta abrir `/admin/importar` e importar os dados de exemplo.
 4. Criar uma turnê, gerar o link público, baixar o PDF. Reportar bugs.
-5. Vercel: adicionar `VITE_FIREBASE_API_KEY` e fazer redeploy (ver "Infra já configurada"). Depois testar o login em https://tourbook-app-delta.vercel.app.
+5. ~~Vercel~~ Feito: https://tourbook-app-delta.vercel.app no ar. Falta o José testar o login com Google lá.
 6. ~~Mergear o PR #1~~ Feito em 2026-10-26.
 
 ## Revisão adversarial (concluída em 2026-10-24)
