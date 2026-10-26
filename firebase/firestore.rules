@@ -1,0 +1,210 @@
+rules_version = '2';
+
+// Regras do Tour App. Coleções e campos seguem packages/core/src/firestore.ts.
+// Testadas em firebase/firestore.rules.test.ts (emulador).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----------------------------------------------------------------------
+    // Helpers
+    // ----------------------------------------------------------------------
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function profilePath(userId) {
+      return /databases/$(database)/documents/profiles/$(userId);
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(profilePath(uid()))
+        && get(profilePath(uid())).data.get('role', 'user') == 'admin';
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Entidades do mapa (casas, produtoras, bandas): `verified` é público para
+    // quem está logado; `pending`/`rejected` só quem enviou ou admin.
+    function canReadEntity() {
+      return signedIn() && (
+        resource.data.get('status', '') == 'verified'
+        || resource.data.get('submittedBy', '') == uid()
+        || isAdmin()
+      );
+    }
+
+    // Usuário comum só cria como sugestão (`pending`, assinada por ele). O admin
+    // cria direto (ex.: importSeedData grava `verified` em lote) — ver `allow create`.
+    function canCreateEntity() {
+      return signedIn()
+        && incoming().get('status', '') == 'pending'
+        && incoming().get('submittedBy', '') == uid();
+    }
+
+    // Quem enviou pode editar enquanto ainda está pendente (sem se aprovar sozinho).
+    function canUpdateOwnPending() {
+      return signedIn()
+        && resource.data.get('submittedBy', '') == uid()
+        && resource.data.get('status', '') == 'pending'
+        && incoming().get('status', '') == 'pending'
+        && incoming().get('submittedBy', '') == uid();
+    }
+
+    // ----------------------------------------------------------------------
+    // profiles/{userId}
+    // ----------------------------------------------------------------------
+    match /profiles/{userId} {
+      // Só leitura individual: listar perfis (enumerar usuários) é coisa de admin.
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create: if signedIn() && uid() == userId && incoming().get('role', '') == 'user';
+      allow update: if isAdmin()
+        || (signedIn() && uid() == userId && incoming().get('role', 'user') == resource.data.get('role', 'user'));
+      allow delete: if isAdmin();
+    }
+
+    // ----------------------------------------------------------------------
+    // cities/{cityId} — só a equipe cadastra
+    // ----------------------------------------------------------------------
+    match /cities/{cityId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ----------------------------------------------------------------------
+    // venues / producers / bands
+    // ----------------------------------------------------------------------
+    match /venues/{venueId} {
+      allow read: if canReadEntity();
+      allow create: if isAdmin() || canCreateEntity();
+      allow update: if isAdmin() || canUpdateOwnPending();
+      allow delete: if isAdmin();
+    }
+
+    match /producers/{producerId} {
+      allow read: if canReadEntity();
+      allow create: if isAdmin() || canCreateEntity();
+      allow update: if isAdmin() || canUpdateOwnPending();
+      allow delete: if isAdmin();
+    }
+
+    match /bands/{bandId} {
+      // A banda pode ser editada por quem a "reivindicou" (ownerId), sem mudar status/dono.
+      function isBandOwner() {
+        return signedIn()
+          && resource.data.get('ownerId', '') == uid()
+          && incoming().get('ownerId', '') == uid()
+          && incoming().get('status', '') == resource.data.get('status', '');
+      }
+      allow read: if canReadEntity();
+      allow create: if isAdmin() || canCreateEntity();
+      allow update: if isAdmin() || canUpdateOwnPending() || isBandOwner();
+      allow delete: if isAdmin();
+    }
+
+    // ----------------------------------------------------------------------
+    // tours/{tourId} e tours/{tourId}/dates/{dateId}
+    // ----------------------------------------------------------------------
+    function tourPath(tourId) {
+      return /databases/$(database)/documents/tours/$(tourId);
+    }
+
+    function memberOf(tour) {
+      return signedIn() && uid() in tour.get('memberIds', []);
+    }
+
+    function ownerOf(tour) {
+      return signedIn() && tour.get('ownerId', '') == uid();
+    }
+
+    function editorOf(tour) {
+      return ownerOf(tour) || (memberOf(tour) && tour.get('memberRoles', {}).get(uid(), 'viewer') == 'editor');
+    }
+
+    match /tours/{tourId} {
+      // `get` de um id inexistente devolve "não existe" (fetchTour → null) em vez
+      // de erro de permissão; ids são automáticos, então isso não revela nada.
+      allow get: if signedIn() && (resource == null || memberOf(resource.data));
+      allow list: if memberOf(resource.data);
+
+      allow create: if signedIn()
+        && incoming().get('ownerId', '') == uid()
+        && incoming().get('memberIds', []) == [uid()]
+        && incoming().get('memberRoles', {}).get(uid(), '') == 'editor'
+        && incoming().get('shareToken', null) == null;
+
+      // Dono pode tudo (inclusive gerenciar membros); editor não mexe em dono/membros.
+      allow update: if ownerOf(resource.data)
+        || (editorOf(resource.data)
+          && incoming().get('ownerId', '') == resource.data.get('ownerId', '')
+          && incoming().get('memberIds', []) == resource.data.get('memberIds', [])
+          && incoming().get('memberRoles', {}) == resource.data.get('memberRoles', {}));
+
+      allow delete: if ownerOf(resource.data);
+
+      match /dates/{dateId} {
+        function parentTour() {
+          return get(tourPath(tourId)).data;
+        }
+        // Estado da turnê *depois* da requisição: createTour grava turnê + datas
+        // num único batch e, nele, `get()/exists()` ainda não enxergam a turnê.
+        // A escrita da própria turnê nesse batch é validada pela regra dela.
+        function parentTourAfter() {
+          return getAfter(tourPath(tourId)).data;
+        }
+        allow read: if exists(tourPath(tourId)) && memberOf(parentTour());
+        allow write: if existsAfter(tourPath(tourId)) && editorOf(parentTourAfter());
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // publicTourbooks/{token} — leitura pública por token (`get`, sem `list`);
+    // escrita só por editor da turnê e só enquanto o token for o shareToken atual dela.
+    // ----------------------------------------------------------------------
+    match /publicTourbooks/{token} {
+      function incomingTourId() {
+        return incoming().get('tourId', null);
+      }
+      function existingTourId() {
+        return resource.data.get('tourId', null);
+      }
+      function tourOfIncoming() {
+        return get(tourPath(incomingTourId())).data;
+      }
+      function tourOfExisting() {
+        return get(tourPath(existingTourId())).data;
+      }
+      // Só `get`: o token é a chave de acesso, então ninguém pode listar os tokens.
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn()
+        && incomingTourId() is string
+        && exists(tourPath(incomingTourId()))
+        && tourOfIncoming().get('shareToken', null) == token
+        && editorOf(tourOfIncoming());
+      // Regravar só pode manter o mesmo tourId: outra turnê com shareToken igual
+      // ao token não pode sequestrar um documento público já existente.
+      allow update: if signedIn()
+        && incomingTourId() is string
+        && incomingTourId() == existingTourId()
+        && exists(tourPath(incomingTourId()))
+        && tourOfIncoming().get('shareToken', null) == token
+        && editorOf(tourOfIncoming());
+      // Apagar um token que já não existe é no-op permitido (deleteTour e
+      // disableShareLink precisam seguir mesmo se a cópia pública já sumiu).
+      allow delete: if signedIn()
+        && (resource == null
+          || (existingTourId() is string
+            && exists(tourPath(existingTourId()))
+            && tourOfExisting().get('shareToken', null) == token
+            && editorOf(tourOfExisting())));
+    }
+  }
+}

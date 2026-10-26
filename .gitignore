@@ -1,2 +1,14 @@
-node_modules/
+node_modules
+dist
 .env
+.env.local
+.env.*.local
+*.tsbuildinfo
+.DS_Store
+.vercel
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase
+# chave da conta de serviço usada por `pnpm seed` (nunca versionar)
+service-account*.json

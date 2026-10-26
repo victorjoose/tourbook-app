@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel runs still in progress for the same ref when a new one starts.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Typecheck, lint, test e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Reads the pnpm version from the "packageManager" field in package.json.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      # firebase/ (rules tests) and scripts/ are not workspace packages; no emulator needed here.
+      - name: Typecheck firebase/ e scripts/
+        run: pnpm typecheck:tools
+
+      - name: Lint
+        run: pnpm -r lint
+
+      # Firestore rules tests (pnpm rules:test) need Java + the emulator download; they run locally only.
+      - name: Test
+        run: pnpm -r test
+
+      # Placeholders: the Firebase web config is only read at runtime; the build just needs the vars defined.
+      - name: Build web
+        run: pnpm --filter web build
+        env:
+          VITE_FIREBASE_API_KEY: x
+          VITE_FIREBASE_AUTH_DOMAIN: x.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: x
+          VITE_FIREBASE_APP_ID: x
