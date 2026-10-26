@@ -58,6 +58,11 @@ Ficaram para depois (achados médios/baixos de UX e qualidade, não bloqueiam o 
 - Barra inferior do admin no celular tem 5 itens (apertada).
 - Nome do app ainda não decidido ("Tour App" é provisório).
 
+## Lições do primeiro deploy (2026-10-26)
+- **Worker do MapLibre no build do Vite 8:** o maplibre-gl 6 monta a URL do worker com `new URL(..., import.meta.url)` dentro de uma função e o bundler não emite o arquivo; em produção o worker dava 404 e o mapa ficava só com o relevo bege (sem ruas, água, pins, rota), enquanto no `pnpm dev` funcionava. Corrigido em `MapView.tsx` com `import ... from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'` + `setWorkerUrl(...)`. Ao atualizar maplibre-gl ou Vite, confira que o build gera `dist/assets/maplibre-gl-worker-*.js`.
+- **Deploy com página aberta:** o index.html antigo aponta para chunks que já não existem ("Failed to fetch dynamically imported module"). `apps/web/src/lib/staleBuild.ts` recarrega a página uma vez nesses casos (import das rotas e `vite:preloadError`) e o router tem um `errorElement` em pt-BR (`RouteErrorPage`).
+- **Estilo do mapa:** OpenFreeMap `liberty` (claro) mostra ruas e nomes conforme o zoom. Alternativas escuras gratuitas do mesmo provedor: `https://tiles.openfreemap.org/styles/fiord` e `.../styles/dark`; basta trocar `VITE_MAP_STYLE_URL` na Vercel e fazer redeploy.
+
 ## Como continuar sem perder tempo
 - Convenções e API do core: `SPEC.md`. Regras e emulador: `firebase/README.md`.
 - Antes de abrir/atualizar PR: `pnpm -r typecheck && pnpm -r lint && pnpm -r test && pnpm typecheck:tools` e `VITE_FIREBASE_API_KEY=x VITE_FIREBASE_AUTH_DOMAIN=x.firebaseapp.com VITE_FIREBASE_PROJECT_ID=x VITE_FIREBASE_APP_ID=x pnpm --filter web build`.
