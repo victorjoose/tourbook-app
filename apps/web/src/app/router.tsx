@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router'
 import { RequireAdmin, RequireAuth } from '../auth/RequireAuth'
 import { AppShell } from './AppShell'
+import { RouteErrorPage } from './RouteErrorPage'
 import {
   LazyOutlet,
   LoginPage,
@@ -20,6 +21,7 @@ import {
 export const router = createBrowserRouter([
   {
     element: <LazyOutlet />,
+    errorElement: <RouteErrorPage />,
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/t/:token', element: <PublicTourbookPage /> },
